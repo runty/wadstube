@@ -336,7 +336,9 @@
           <span class="folder-name">{folder.name}</span>
           <span class="count">{folder.channelCount}</span>
           {#if folder.children?.length > 0}
-            <span class="arrow" class:rotated={expandedFolders[folder.name]}>&#9654;</span>
+            <span class="subfolder-arrow" class:expanded={expandedFolders[folder.name]}>
+              <span class="chevron-icon"></span>
+            </span>
           {/if}
         </button>
       </div>
@@ -542,7 +544,8 @@
     border: none;
     padding: 0 4px 0 8px;
     cursor: pointer;
-    min-width: 28px;
+    min-width: 32px;
+    min-height: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -556,10 +559,24 @@
     display: block;
     width: 0;
     height: 0;
-    border-top: 4px solid transparent;
-    border-bottom: 4px solid transparent;
-    border-left: 6px solid var(--text-muted);
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 7px solid var(--text-muted);
     transition: transform 0.15s ease;
+  }
+  @media (max-width: 900px) {
+    .chevron-btn {
+      min-width: 44px;
+      padding: 0 10px 0 14px;
+    }
+    .chevron-btn.sub {
+      padding-left: 30px;
+    }
+    .chevron-icon {
+      border-top-width: 6px;
+      border-bottom-width: 6px;
+      border-left-width: 9px;
+    }
   }
   .chevron-btn:hover .chevron-icon {
     border-left-color: var(--text);
@@ -607,14 +624,15 @@
     flex-shrink: 0;
   }
   .folder-item.active .count { color: var(--accent); opacity: 0.7; }
-  .arrow {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    transition: transform 0.2s;
+  .subfolder-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     margin-left: 6px;
     flex-shrink: 0;
+    transition: transform 0.2s;
   }
-  .arrow.rotated { transform: rotate(90deg); }
+  .subfolder-arrow.expanded { transform: rotate(90deg); }
 
   /* Channel list inside folder */
   .channel-list {
