@@ -194,14 +194,30 @@
 
   async function handleChannelDelete(folderName, channel) {
     closeContextMenu();
-    if (confirm(`Remove "${channel.name}" from ${folderName}?`)) {
-      if ($activeChannelId === channel.id) activeChannelId.set(null);
-      try {
-        await removeChannelFromFolder(folderName, channel.id);
-        await refreshChannels(folderName);
-      } catch (err) {
-        error.set(err.message);
+    if (!confirm(`Remove "${channel.name}" from ${folderName}?`)) return;
+
+    // Remember position so we can advance to the next channel after delete
+    const wasActive = $activeChannelId === channel.id;
+    const beforeList = channelsCache[folderName] || [];
+    const deletedIdx = beforeList.findIndex((c) => c.id === channel.id);
+
+    try {
+      await removeChannelFromFolder(folderName, channel.id);
+      await refreshChannels(folderName);
+
+      if (wasActive) {
+        const after = channelsCache[folderName] || [];
+        if (after.length === 0) {
+          activeChannelId.set(null);
+        } else {
+          // Pick channel at the same index, or the last one if we ran off the end
+          const next = after[Math.min(deletedIdx, after.length - 1)];
+          activeChannelId.set(next.id);
+          loadVideos(folderName);
+        }
       }
+    } catch (err) {
+      error.set(err.message);
     }
   }
 
