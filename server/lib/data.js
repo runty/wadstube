@@ -3,6 +3,11 @@ const path = require("path");
 const { migrate } = require("./migrate");
 
 function loadData(dataDir) {
+  // Ensure the data directory exists
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+
   const tubePath = path.join(dataDir, "tube.json");
 
   if (fs.existsSync(tubePath)) {
@@ -17,9 +22,20 @@ function loadData(dataDir) {
     }
   }
 
-  // Auto-migrate from PocketTube format
-  console.log("tube.json not found, migrating from PocketTube format...");
-  return migrate(dataDir);
+  // Check for PocketTube JSON to migrate
+  const pocketTubeFiles = fs.readdirSync(dataDir)
+    .filter((f) => f.startsWith("youtube_subscription_manager_") && f.endsWith(".json"));
+
+  if (pocketTubeFiles.length > 0) {
+    console.log("tube.json not found, migrating from PocketTube format...");
+    return migrate(dataDir);
+  }
+
+  // Fresh install — start empty
+  console.log("Starting with empty data (no tube.json or PocketTube JSON found)");
+  const emptyData = { version: 1, folders: [] };
+  fs.writeFileSync(tubePath, JSON.stringify(emptyData, null, 2), "utf-8");
+  return emptyData;
 }
 
 function saveData(dataDir, data) {
