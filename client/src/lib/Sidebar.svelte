@@ -195,10 +195,10 @@
   async function handleChannelDelete(folderName, channel) {
     closeContextMenu();
     if (confirm(`Remove "${channel.name}" from ${folderName}?`)) {
+      if ($activeChannelId === channel.id) activeChannelId.set(null);
       try {
         await removeChannelFromFolder(folderName, channel.id);
         await refreshChannels(folderName);
-        if ($activeChannelId === channel.id) activeChannelId.set(null);
       } catch (err) {
         error.set(err.message);
       }
