@@ -7,7 +7,7 @@
   --accent: #ff4444;
   --border: #333;
 
-  font-family: "Comic Sans MS", "Comic Sans", cursive;
+  font-family: "Comic Sans MS", "Comic Sans", "Comic Neue", cursive;
   font-size: 16px;
   line-height: 1.5;
   color: var(--text);
