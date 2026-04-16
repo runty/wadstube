@@ -205,6 +205,26 @@
     }
   }
 
+  function handleKeydown(e) {
+    if (e.key !== "Delete" && e.key !== "Backspace") return;
+    if (!$activeChannelId || !$activeFolder) return;
+
+    // Don't fire when user is typing
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+
+    // Don't fire if a menu or rename is open
+    if (contextMenu || moveMenu || renamingChannel || renamingFolder) return;
+
+    // Find the channel object for the confirm dialog
+    const channels = channelsCache[$activeFolder] || [];
+    const channel = channels.find((c) => c.id === $activeChannelId)
+      || { id: $activeChannelId, name: "this channel" };
+
+    e.preventDefault();
+    handleChannelDelete($activeFolder, channel);
+  }
+
   function showMoveMenu() {
     if (!contextMenu || contextMenu.type !== "channel") return;
     moveMenu = { ...contextMenu };
@@ -283,7 +303,7 @@
   }
 </script>
 
-<svelte:window on:click={closeContextMenu} />
+<svelte:window on:click={closeContextMenu} on:keydown={handleKeydown} />
 
 {#if $sidebarOpen}
   <button class="overlay" on:click={() => sidebarOpen.set(false)} aria-label="Close sidebar"></button>
