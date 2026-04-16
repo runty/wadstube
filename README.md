@@ -308,9 +308,26 @@ Supported URL formats:
 
 ### Backup & Restore
 
-Click the ⋮ menu in the header:
+**Manual (from the UI):** Click the ⋮ menu in the header:
 - **Backup** — downloads `tube-backup-{timestamp}.json`
 - **Restore** — upload a backup file to replace current data (auto-saves a pre-restore backup on the server)
+
+**Automatic nightly backups:** The server writes a snapshot of `tube.json` + `cache.json` into `data/backups/YYYY-MM-DD/` every night at 1am local time (container `TZ`, default `America/Los_Angeles`). If the container was down and a backup would have been missed, one runs on next startup.
+
+Retention follows a Grandfather-Father-Son schedule — up to 12 backups are kept:
+- 4 most recent daily backups
+- 1 backup from each of the 4 most recent ISO weeks (not already in the daily set)
+- 1 backup from each of the 4 most recent months (not already in the daily or weekly sets)
+- Everything older is deleted
+
+To restore from a nightly backup, stop the container, copy the desired dated folder's `tube.json` (and optionally `cache.json`) over the live files, and start the container back up:
+
+```bash
+cd data
+cp backups/2026-04-10/tube.json .
+cp backups/2026-04-10/cache.json .
+docker compose restart
+```
 
 ## API Quota
 

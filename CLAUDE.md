@@ -9,7 +9,7 @@ Self-hosted YouTube subscription manager and video feed viewer. Node.js/Express 
 - **Backend:** Node.js + Express (`server/`)
 - **Frontend:** Svelte built with Vite (`client/`), served as static files by Express
 - **Data:** Two JSON files in `data/` volume — `tube.json` (folders/channels) and `cache.json` (cached videos)
-- **Docker:** Multi-stage build (Alpine), health check, 512MB mem limit
+- **Docker:** Multi-stage build (Alpine), health check, 512MB mem limit, `TZ=America/Los_Angeles` baked in via Dockerfile so the nightly backup scheduler fires at 1am Pacific
 
 ## Key files
 
@@ -18,6 +18,7 @@ Self-hosted YouTube subscription manager and video feed viewer. Node.js/Express 
 - `server/lib/cache.js` — Video cache, per-channel granularity, atomic writes
 - `server/lib/youtube.js` — YouTube API client, shorts detection (free HEAD requests), URL resolution, 10s fetch timeouts
 - `server/lib/migrate.js` — One-time PocketTube → tube.json migration
+- `server/lib/backup.js` — Nightly backups of tube.json + cache.json with GFS retention (4 daily + 4 weekly + 4 monthly); scheduler fires at 1am container-local time
 - `server/routes/folders.js` — Folder/channel CRUD (create, rename, delete folders; add, remove, rename, move channels), input validation
 - `server/routes/videos.js` — Video listing from cache (no API calls)
 - `server/routes/refresh.js` — YouTube API refresh (all or per-folder)

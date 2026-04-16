@@ -42,6 +42,10 @@ console.log(`${summary.length} top-level folders`);
 const stats = cache.getStats();
 console.log(`Cache: ${stats.channelCount} channels, ${stats.videoCount} videos`);
 
+// Nightly backups (GFS retention: 4 daily + 4 weekly + 4 monthly)
+const { scheduleBackups } = require("./lib/backup");
+scheduleBackups(DATA_DIR);
+
 // Express app
 const app = express();
 app.use(cors());

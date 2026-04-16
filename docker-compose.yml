@@ -10,5 +10,6 @@ services:
       - DATA_DIR=/app/data
       - PORT=3000
       - MAX_VIDEOS=${MAX_VIDEOS:-15}
+      - TZ=${TZ:-America/Los_Angeles}
     restart: unless-stopped
     mem_limit: 512m
