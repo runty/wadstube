@@ -76,6 +76,17 @@ class Cache {
     return videos;
   }
 
+  // Returns {channelId: latestChannelName} from cached video data.
+  // Uses the most recent video's channel title for each channel.
+  getChannelNames() {
+    const names = {};
+    for (const [cid, entry] of Object.entries(this.data.channels)) {
+      const name = entry.videos?.[0]?.channel;
+      if (name) names[cid] = name;
+    }
+    return names;
+  }
+
   getStats() {
     const channelCount = Object.keys(this.data.channels).length;
     let videoCount = 0;

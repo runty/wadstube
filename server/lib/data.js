@@ -218,6 +218,24 @@ function moveChannel(data, sourceFolderName, channelId, destFolderName) {
   dest.channels.push(channel);
 }
 
+// Update channel names in tube.json from a map of {channelId: latestName}.
+// Returns the number of channels whose name was updated.
+function syncChannelNames(data, channelIdToName) {
+  let updated = 0;
+  function walk(folder) {
+    for (const ch of folder.channels) {
+      const newName = channelIdToName[ch.id];
+      if (newName && newName !== ch.name) {
+        ch.name = newName;
+        updated++;
+      }
+    }
+    for (const child of folder.children || []) walk(child);
+  }
+  for (const folder of data.folders) walk(folder);
+  return updated;
+}
+
 module.exports = {
   loadData,
   saveData,
@@ -231,6 +249,7 @@ module.exports = {
   addChannel,
   removeChannel,
   getChannelList,
+  syncChannelNames,
   renameChannel,
   moveChannel,
 };

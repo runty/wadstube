@@ -2,8 +2,17 @@ const express = require("express");
 const router = express.Router();
 
 module.exports = function (appState) {
-  const { getChannelsForFolder, collectAllChannelIds } = require("../lib/data");
+  const { getChannelsForFolder, collectAllChannelIds, syncChannelNames, saveData } = require("../lib/data");
   const { fetchChannels } = require("../lib/youtube");
+
+  function syncNamesFromCache() {
+    const names = appState.cache.getChannelNames();
+    const updated = syncChannelNames(appState.data, names);
+    if (updated > 0) {
+      saveData(appState.dataDir, appState.data);
+      console.log(`Updated ${updated} channel name(s) in tube.json`);
+    }
+  }
 
   // Refresh all
   router.post("/", async (req, res) => {
@@ -17,6 +26,7 @@ module.exports = function (appState) {
 
       const channelVideos = await fetchChannels(appState.apiKey, unique, appState.maxVideos);
       appState.cache.updateChannels(channelVideos);
+      syncNamesFromCache();
 
       const stats = appState.cache.getStats();
       res.json({
@@ -45,6 +55,7 @@ module.exports = function (appState) {
 
       const channelVideos = await fetchChannels(appState.apiKey, unique, appState.maxVideos);
       appState.cache.updateChannels(channelVideos);
+      syncNamesFromCache();
 
       const videos = appState.cache.getVideosForChannels(channelIds);
       res.json({ refreshed: Object.keys(channelVideos).length, videos });

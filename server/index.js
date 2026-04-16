@@ -3,7 +3,7 @@ require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") }
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
-const { loadData, getFolderTreeSummary } = require("./lib/data");
+const { loadData, getFolderTreeSummary, syncChannelNames, saveData } = require("./lib/data");
 const { resolveUrl } = require("./lib/youtube");
 const Cache = require("./lib/cache");
 
@@ -29,6 +29,13 @@ const appState = {
   apiKey: API_KEY,
   maxVideos: MAX_VIDEOS,
 };
+
+// Sync channel names from cache into tube.json (no API calls)
+const initialNameUpdates = syncChannelNames(data, cache.getChannelNames());
+if (initialNameUpdates > 0) {
+  saveData(DATA_DIR, data);
+  console.log(`Synced ${initialNameUpdates} channel name(s) from cache`);
+}
 
 const summary = getFolderTreeSummary(data);
 console.log(`${summary.length} top-level folders`);
