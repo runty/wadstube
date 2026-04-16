@@ -263,14 +263,14 @@
     }
   }
 
-  // Flatten all folder names (including subfolders) for the Move menu
+  // Flatten all folder names (including subfolders), sorted alphabetically, for the Move menu
   $: allFolderNames = (() => {
     const names = [];
     for (const f of $folders) {
       names.push(f.name);
       for (const c of f.children || []) names.push(c.name);
     }
-    return names;
+    return names.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   })();
 
   // New folder
