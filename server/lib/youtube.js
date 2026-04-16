@@ -32,10 +32,12 @@ async function fetchPlaylistItems(apiKey, channelId, maxVideos = 15) {
   // Derive uploads playlist ID
   const uploadsId = "UU" + channelId.slice(2);
 
+  // Fetch 50 (the max per call) so that after shorts filtering we still have
+  // enough non-short videos. Same API cost as fetching fewer.
   const params = new URLSearchParams({
     part: "snippet",
     playlistId: uploadsId,
-    maxResults: Math.min(maxVideos, 50).toString(),
+    maxResults: "50",
     key: apiKey,
   });
 
@@ -85,7 +87,7 @@ async function fetchPlaylistItems(apiKey, channelId, maxVideos = 15) {
       )
     );
 
-    return shortsChecked.filter((v) => !v.isShort);
+    return shortsChecked.filter((v) => !v.isShort).slice(0, maxVideos);
   } catch {
     return [];
   }
