@@ -33,13 +33,33 @@
     expandedFolders[name] = !expandedFolders[name];
   }
 
-  // Context menu
+  // Context menu (right-click on desktop, long-press on mobile)
+  let longPressTimer;
+
   function handleContextMenu(e, folderName) {
     e.preventDefault();
+    openContextMenu(e.clientX, e.clientY, folderName);
+  }
+
+  function openContextMenu(x, y, folderName) {
     const menuW = 160, menuH = 120;
-    const x = Math.min(e.clientX, window.innerWidth - menuW);
-    const y = Math.min(e.clientY, window.innerHeight - menuH);
+    x = Math.min(x, window.innerWidth - menuW);
+    y = Math.min(y, window.innerHeight - menuH);
     contextMenu = { x, y, folderName };
+  }
+
+  function handleTouchStart(e, folderName) {
+    const touch = e.touches[0];
+    const x = touch.clientX;
+    const y = touch.clientY;
+    longPressTimer = setTimeout(() => {
+      e.preventDefault();
+      openContextMenu(x, y, folderName);
+    }, 500);
+  }
+
+  function handleTouchEnd() {
+    clearTimeout(longPressTimer);
   }
 
   function closeContextMenu() {
@@ -167,6 +187,9 @@
           if (folder.children?.length > 0) toggleExpand(folder.name);
         }}
         on:contextmenu={(e) => handleContextMenu(e, folder.name)}
+        on:touchstart={(e) => handleTouchStart(e, folder.name)}
+        on:touchend={handleTouchEnd}
+        on:touchmove={handleTouchEnd}
         on:dragover={(e) => handleDragOver(e, folder.name)}
         on:dragleave={handleDragLeave}
         on:drop={(e) => handleDrop(e, folder.name)}
@@ -199,6 +222,9 @@
               class:drag-over={dragOverFolder === child.name}
               on:click={() => selectFolder(child.name)}
               on:contextmenu={(e) => handleContextMenu(e, child.name)}
+              on:touchstart={(e) => handleTouchStart(e, child.name)}
+              on:touchend={handleTouchEnd}
+              on:touchmove={handleTouchEnd}
               on:dragover={(e) => handleDragOver(e, child.name)}
               on:dragleave={handleDragLeave}
               on:drop={(e) => handleDrop(e, child.name)}
@@ -279,6 +305,9 @@
     color: var(--text);
     padding: 10px 20px;
     font-size: 1rem;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
     cursor: pointer;
     border-left: 3px solid transparent;
     transition: background 0.15s;

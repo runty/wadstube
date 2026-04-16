@@ -153,6 +153,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    overflow-x: hidden;
   }
   .panel.drag-over {
     border-color: var(--accent);
@@ -278,7 +279,14 @@
     border-radius: 10px;
   }
   @media (max-width: 640px) {
+    .panel {
+      width: 95%;
+      max-height: 85vh;
+    }
     .channel-id { display: none; }
     .add-bar { padding: 10px 14px; }
+    .add-bar input { font-size: 0.8rem; }
+    .channel-row { padding: 8px 14px; }
+    .panel-header { padding: 12px 14px; }
   }
 </style>
