@@ -18,10 +18,11 @@ Self-hosted YouTube subscription manager and video feed viewer. Node.js/Express 
 - `server/lib/cache.js` — Video cache, per-channel granularity, atomic writes
 - `server/lib/youtube.js` — YouTube API client, shorts detection (free HEAD requests), URL resolution, 10s fetch timeouts
 - `server/lib/migrate.js` — One-time PocketTube → tube.json migration
-- `server/routes/folders.js` — Folder CRUD + channel management, input validation
+- `server/routes/folders.js` — Folder/channel CRUD (create, rename, delete folders; add, remove, rename, move channels), input validation
 - `server/routes/videos.js` — Video listing from cache (no API calls)
 - `server/routes/refresh.js` — YouTube API refresh (all or per-folder)
-- `client/src/stores/feed.js` — Svelte stores + API client functions
+- `client/src/stores/feed.js` — Svelte stores (including `activeChannelId` for per-channel filter) + API client functions
+- `client/src/lib/Sidebar.svelte` — Folder tree with expandable inline channels, channel filter on click, context menu for folders and channels (rename/delete/move)
 - `client/src/app.css` — Theme (modern minimal, orange accent, system light/dark mode)
 
 ## Commands
@@ -33,6 +34,9 @@ docker compose up --build -d
 # Local dev
 cd server && node index.js &
 cd client && npm run dev
+
+# Deploy to production server
+ssh shrimp 'bash ~/wadstube-redeploy.sh'
 ```
 
 ## Constraints

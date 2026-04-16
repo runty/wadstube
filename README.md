@@ -9,17 +9,18 @@ YouTube's native subscription feed is a single unsorted stream. PocketTube (brow
 ## Features
 
 - **Folder-organized feed** — sidebar with expandable folder/subfolder hierarchy
+- **Expandable channels in sidebar** — click the chevron next to a folder to see channels inline; click a channel to filter videos to just that channel
+- **Channel management** — right-click/long-press a channel in the sidebar to rename, move to another folder, or delete it
 - **On-demand refresh** — no automatic API calls; click Refresh to fetch new videos for the current folder only
 - **No YouTube Shorts** — shorts are automatically detected and filtered out during refresh (via free HEAD request, no API quota cost)
 - **Search** — filter videos by title, channel name, or description
-- **Channel management** — right-click a folder to view/add/remove channels
 - **Drag-and-drop** — drag any YouTube URL (video, channel, @handle, shorts, live) onto a folder to add that channel
 - **Paste to add** — paste URLs in the channel list panel (works on mobile)
 - **URL resolution** — video URLs are auto-resolved to the channel via YouTube API (1 unit)
 - **Backup/restore** — download your folder/channel data as JSON, restore from a backup
 - **Right-click to copy** — right-click any video card to copy its link
-- **Responsive** — works on desktop and mobile (sidebar collapses, grid adapts)
-- **Dark theme** — YouTube-like dark UI with Comic Sans
+- **Mobile-friendly** — long-press for context menus, iOS home screen icon, responsive layout
+- **System light/dark mode** — auto-switches with OS theme
 - **Local timezone** — video publish times displayed in your browser's timezone
 - **PocketTube migration** — auto-imports from PocketTube JSON export on first run
 
@@ -148,6 +149,8 @@ One-time migration from PocketTube's format (`folder_name → [channel_id_string
 - `GET /api/folders/:name/channels` — list channels alphabetically
 - `POST /api/folders/:name/channels` — add channel by ID or URL (auto-resolves)
 - `DELETE /api/folders/:name/channels/:channelId` — remove channel
+- `PATCH /api/folders/:name/channels/:channelId` — rename channel
+- `POST /api/folders/:name/channels/:channelId/move` — move channel to another folder
 
 #### `server/routes/videos.js` — Video API
 - `GET /api/videos?folder=X` — returns cached videos for a folder (or all). Reads from cache only, no API call.
@@ -159,7 +162,7 @@ One-time migration from PocketTube's format (`folder_name → [channel_id_string
 ### Client
 
 #### `client/src/stores/feed.js` — State Management
-Svelte writable stores for app state: `folders`, `videos`, `activeFolder`, `refreshing`, `error`, `sidebarOpen`, `showChannelsFor`, `toast`, `searchQuery`. Also exports async functions that call the API and update stores: `loadFolders()`, `loadVideos()`, `refreshFolder()`, `createFolderApi()`, `renameFolderApi()`, `deleteFolderApi()`, `addChannelToFolder()`, `removeChannelFromFolder()`, `loadChannels()`.
+Svelte writable stores for app state: `folders`, `videos`, `activeFolder`, `activeChannelId`, `refreshing`, `error`, `sidebarOpen`, `showChannelsFor`, `toast`, `searchQuery`. Also exports async functions that call the API and update stores: `loadFolders()`, `loadVideos()`, `refreshFolder()`, `createFolderApi()`, `renameFolderApi()`, `deleteFolderApi()`, `addChannelToFolder()`, `removeChannelFromFolder()`, `loadChannels()`, `renameChannelApi()`, `moveChannelApi()`.
 
 #### `client/src/App.svelte` — Root Component
 Mounts Header, Sidebar, VideoGrid, FolderChannels (modal), and Toast. On mount, loads folders and opens sidebar on wide screens. No videos loaded until user clicks a folder.
@@ -167,18 +170,22 @@ Mounts Header, Sidebar, VideoGrid, FolderChannels (modal), and Toast. On mount, 
 #### `client/src/lib/Header.svelte` — Top Bar
 Contains: hamburger menu toggle, "WadsTube" title, search input with clear button, gear menu (backup/restore), refresh button with spinner. On mobile, title hides and search expands.
 
-#### `client/src/lib/Sidebar.svelte` — Folder Navigation
+#### `client/src/lib/Sidebar.svelte` — Folder & Channel Navigation
 Renders folder tree from `folders` store. Features:
-- Click folder → loads videos, highlights active
-- Expandable parent folders (arrow toggle)
-- Right-click context menu (View Channels, Rename, Delete)
-- Inline rename (input replaces folder name)
+- **Left chevron** on each folder → expands to show its channels inline (lazily loaded and cached client-side)
+- **Click folder** → loads videos, highlights active, clears channel filter
+- **Click channel** → filters videos to just that channel (toggle to deselect)
+- **Subfolder arrow** on parent folders → expands children
+- **Right-click/long-press folder** → context menu (View Channels, Rename, Delete)
+- **Right-click/long-press channel** → context menu (Rename, Move to folder, Delete)
+- **Move submenu** — centered responsive picker listing all folders
+- Inline rename for folders and channels
 - "+ New Folder" button at bottom
-- Drag-and-drop zone on each folder (highlights red, resolves URL, shows toast)
+- Drag-and-drop zone on each folder (highlights, resolves URL, shows toast)
 - Overlay backdrop on mobile, auto-closes after selection
 
 #### `client/src/lib/VideoGrid.svelte` — Video Display
-Renders a responsive CSS grid of VideoCards. Filters by `searchQuery` store (matches title, channel, description). Shows "Select a folder" or "No videos match" empty states.
+Renders a responsive CSS grid of VideoCards. Filters by `activeChannelId` first (if set), then by `searchQuery` (matches title, channel, description). Shows "Select a folder" or "No videos match" empty states.
 
 #### `client/src/lib/VideoCard.svelte` — Single Video
 Displays thumbnail (16:9), title (2-line clamp), description (2-line clamp), channel name (clickable, opens channel page), and publish date (converted to local timezone in browser). Click opens video in new tab. Right-click copies video URL to clipboard with toast confirmation.
@@ -271,8 +278,17 @@ The app runs at `http://localhost:3000`.
 ### Managing Folders
 
 - **Create:** click "+ New Folder" at the bottom of the sidebar
-- **Rename/Delete:** right-click a folder for the context menu
-- **View Channels:** right-click a folder > "View Channels"
+- **Rename/Delete:** right-click (or long-press on mobile) a folder for the context menu
+- **View Channels:** right-click a folder > "View Channels" for the full modal
+
+### Viewing & Filtering by Channel
+
+- **Expand channels inline:** click the chevron next to a folder to see its channels in the sidebar
+- **Filter by channel:** click a channel to show only that channel's videos (click again to deselect)
+- **Manage channels in sidebar:** right-click (or long-press) a channel for:
+  - **Rename** — edit the channel's display name
+  - **Move to folder...** — pick a destination folder from a list
+  - **Delete** — remove the channel from the folder
 
 ### Adding Channels
 
@@ -292,7 +308,7 @@ Supported URL formats:
 
 ### Backup & Restore
 
-Click the gear icon in the header:
+Click the ⋮ menu in the header:
 - **Backup** — downloads `tube-backup-{timestamp}.json`
 - **Restore** — upload a backup file to replace current data (auto-saves a pre-restore backup on the server)
 
