@@ -316,12 +316,12 @@
   .folder-item.active {
     border-left-color: var(--accent);
     color: var(--accent);
-    background: rgba(255,68,68,0.08);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
   }
   .folder-item.parent { font-weight: 600; }
   .folder-item.sub { padding-left: 36px; font-size: 0.9rem; }
   .folder-item.drag-over {
-    background: rgba(255,68,68,0.15);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
     border-left-color: var(--accent);
   }
   .count {

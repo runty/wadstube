@@ -89,7 +89,7 @@
     background: none;
     border: none;
     font-size: 0.78rem;
-    color: var(--text-muted);
+    color: var(--accent);
     margin-bottom: 2px;
     cursor: pointer;
     padding: 0;

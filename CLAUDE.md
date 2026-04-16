@@ -1,51 +1,62 @@
-# Tube - YouTube Subscription Feed Generator
+# WadsTube
 
 ## Project overview
 
-Python script that reads a PocketTube browser extension JSON export and fetches recent videos from the YouTube Data API v3, outputting a self-contained HTML feed page.
+Self-hosted YouTube subscription manager and video feed viewer. Node.js/Express backend + Svelte frontend, runs in Docker. Manages folders/channels in `tube.json`, caches video data in `cache.json`, fetches from YouTube Data API v3 on demand only.
 
 ## Architecture
 
-- `fetch_videos.py` — single-file script containing all logic: API fetching, folder tree building, HTML template, caching
-- PocketTube JSON has folder names as keys mapping to arrays of YouTube channel IDs. Subfolder hierarchy is in `ysc_settings.sub_groups`
-- Uses `playlistItems.list` API (1 unit/call) to get recent uploads per channel. Channel upload playlist ID is derived by replacing `UC` prefix with `UU`
-- HTML output is a single file with embedded CSS/JS: dark theme, left sidebar drawer for folders, video card grid, client-side filtering
+- **Backend:** Node.js + Express (`server/`)
+- **Frontend:** Svelte built with Vite (`client/`), served as static files by Express
+- **Data:** Two JSON files in `data/` volume — `tube.json` (folders/channels) and `cache.json` (cached videos)
+- **Docker:** Multi-stage build (Alpine), health check, 512MB mem limit
 
 ## Key files
 
-- `fetch_videos.py` — main script
-- `.env` — YouTube Data API key (YOUTUBE_API_KEY)
-- `cache.json` — cached API results to avoid re-fetching
-- `feed.html` — generated output
-- `requirements.txt` — Python deps: aiohttp, feedparser, jinja2, python-dotenv, google-api-python-client
-- `com.tube.fetch-videos.plist` — macOS launchd plist (not yet installed)
+- `server/index.js` — Express entry point, backup/restore/resolve-url routes
+- `server/lib/data.js` — Load/save tube.json, folder/channel CRUD, atomic writes
+- `server/lib/cache.js` — Video cache, per-channel granularity, atomic writes
+- `server/lib/youtube.js` — YouTube API client, shorts detection (free HEAD requests), URL resolution, 10s fetch timeouts
+- `server/lib/migrate.js` — One-time PocketTube → tube.json migration
+- `server/routes/folders.js` — Folder CRUD + channel management, input validation
+- `server/routes/videos.js` — Video listing from cache (no API calls)
+- `server/routes/refresh.js` — YouTube API refresh (all or per-folder)
+- `client/src/stores/feed.js` — Svelte stores + API client functions
+- `client/src/app.css` — Theme (modern minimal, orange accent, system light/dark mode)
 
 ## Commands
 
 ```bash
-# Activate venv
-source .venv/bin/activate
+# Docker (production)
+docker compose up --build -d
 
-# Fetch fresh from API
-python3 fetch_videos.py --refresh
-
-# Regenerate HTML from cache (no API calls)
-python3 fetch_videos.py
-
-# Custom: 10 videos per channel, custom output
-python3 fetch_videos.py --refresh -n 10 -o my_feed.html
+# Local dev
+cd server && node index.js &
+cd client && npm run dev
 ```
 
 ## Constraints
 
-- YouTube Data API free quota: 10,000 units/day. Each run uses ~2,400 units (~2,400 channels). Max ~4 fresh runs/day
-- Do NOT add features requiring extra API endpoints (view counts via `videos.list`, duration via `contentDetails`) unless explicitly asked — these double quota usage
-- Always use `--refresh` flag awareness: without it, the script uses cached data. When iterating on UI/HTML, never call `--refresh` unnecessarily
-- Some PocketTube entries are full URLs instead of channel IDs — these fail silently (known issue, not yet fixed)
+- YouTube Data API free quota: 10,000 units/day
+- Each channel refresh = 1 unit. ~2,400 channels = ~2,400 units per full refresh
+- Shorts detection uses free HEAD requests to youtube.com/shorts/{id}, no API cost
+- Do NOT add features requiring extra API endpoints (view counts, duration) unless explicitly asked
+- Per-folder refresh only fetches that folder's channels, not all
+- No automatic refresh — only when user clicks Refresh button
 - Quota resets at midnight Pacific time
 
-## Code style
+## Theming
 
-- Single-file architecture — keep everything in `fetch_videos.py`
-- HTML template is embedded in the Python file as a Jinja2 Template string
-- Async fetching with aiohttp and semaphore-based concurrency (default 20)
+- Modern minimal theme with orange accent (`#ea580c` light, `#f97316` dark)
+- Respects system `prefers-color-scheme` for automatic light/dark switching
+- Uses Comic Sans MS / Comic Neue (Google Fonts fallback for iOS)
+- All accent colors use CSS `var(--accent)` — change in `app.css` to re-theme
+
+## Data format
+
+`tube.json` — folders as ordered array, each with id, name, channels (id/name/addedAt), children:
+```json
+{ "version": 1, "folders": [{ "id": "...", "name": "...", "channels": [...], "children": [...] }] }
+```
+
+`cache.json` — keyed by channel ID, each with fetched_at and videos array.

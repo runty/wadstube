@@ -268,7 +268,7 @@
   .drop-overlay {
     position: absolute;
     inset: 0;
-    background: rgba(255, 68, 68, 0.1);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
     display: flex;
     align-items: center;
     justify-content: center;
