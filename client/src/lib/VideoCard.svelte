@@ -62,7 +62,7 @@
     padding: 10px 12px;
   }
   .card-title {
-    font-size: 0.9rem;
+    font-size: 1rem;
     font-weight: 600;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -71,7 +71,7 @@
     margin-bottom: 4px;
   }
   .card-desc {
-    font-size: 0.78rem;
+    font-size: 0.85rem;
     color: var(--text-muted);
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -81,14 +81,15 @@
     line-height: 1.4;
   }
   .card-meta {
-    font-size: 0.75rem;
+    font-size: 0.82rem;
     color: var(--text-muted);
   }
   .card-channel {
     display: inline;
     background: none;
     border: none;
-    font-size: 0.78rem;
+    font-size: 0.88rem;
+    font-weight: 700;
     color: var(--accent);
     margin-bottom: 2px;
     cursor: pointer;

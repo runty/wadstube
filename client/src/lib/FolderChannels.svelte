@@ -180,10 +180,13 @@
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 1.4rem;
+    font-size: 1.6rem;
     cursor: pointer;
+    padding: 4px 8px;
+    line-height: 1;
+    border-radius: 4px;
   }
-  .close-btn:hover { color: var(--text); }
+  .close-btn:hover { color: var(--text); background: var(--bg); }
 
   .add-bar {
     display: flex;
@@ -253,12 +256,14 @@
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 1.1rem;
+    font-size: 1.4rem;
     cursor: pointer;
-    padding: 0 4px;
+    padding: 4px 8px;
     flex-shrink: 0;
+    line-height: 1;
+    border-radius: 4px;
   }
-  .remove-btn:hover { color: var(--accent); }
+  .remove-btn:hover { color: var(--accent); background: var(--bg); }
   .status-msg {
     color: var(--text-muted);
     font-style: italic;

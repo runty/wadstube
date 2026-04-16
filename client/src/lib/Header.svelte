@@ -80,7 +80,7 @@
     {/if}
   </div>
   <div class="gear-wrapper">
-    <button class="icon-btn" on:click|stopPropagation={() => showGearMenu = !showGearMenu} title="Settings">&#9881;</button>
+    <button class="icon-btn" on:click|stopPropagation={() => showGearMenu = !showGearMenu} title="Settings">&#8942;</button>
     {#if showGearMenu}
       <div class="gear-menu">
         <button on:click={handleBackup}>&#8615; Backup</button>
@@ -153,15 +153,16 @@
   .search:focus { border-color: var(--accent); }
   .search-clear {
     position: absolute;
-    right: 6px;
+    right: 4px;
     top: 50%;
     transform: translateY(-50%);
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 1.1rem;
+    font-size: 1.4rem;
     cursor: pointer;
-    padding: 0 4px;
+    padding: 4px 8px;
+    line-height: 1;
   }
   .search-clear:hover { color: var(--text); }
   .icon-btn {
@@ -263,10 +264,11 @@
     background: none;
     border: none;
     color: #fff;
-    font-size: 1.2rem;
+    font-size: 1.5rem;
     cursor: pointer;
-    padding: 0 4px;
+    padding: 4px 10px;
     opacity: 0.8;
+    line-height: 1;
   }
   .dismiss:hover {
     opacity: 1;
