@@ -9,6 +9,7 @@ export const sidebarOpen = writable(false);
 export const showChannelsFor = writable(null);
 export const toast = writable(null);
 export const searchQuery = writable("");
+export const activeChannelId = writable(null);
 
 const API = "";
 
@@ -86,6 +87,35 @@ export async function removeChannelFromFolder(folderName, channelId) {
   const data = await resp.json();
   if (!resp.ok) throw new Error(data.error);
   folders.set(data.folders);
+}
+
+export async function renameChannelApi(folderName, channelId, newName) {
+  const resp = await fetch(
+    `${API}/api/folders/${encodeURIComponent(folderName)}/channels/${encodeURIComponent(channelId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newName }),
+    }
+  );
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error);
+  return data;
+}
+
+export async function moveChannelApi(sourceFolderName, channelId, destFolderName) {
+  const resp = await fetch(
+    `${API}/api/folders/${encodeURIComponent(sourceFolderName)}/channels/${encodeURIComponent(channelId)}/move`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ destFolder: destFolderName }),
+    }
+  );
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error);
+  folders.set(data.folders);
+  return data;
 }
 
 export async function refreshFolder(folder) {

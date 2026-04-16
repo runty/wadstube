@@ -173,6 +173,35 @@ function getChannelList(data, folderName) {
   return [...folder.channels].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
 }
 
+function renameChannel(data, folderName, channelId, newName) {
+  const folder = findFolder(data.folders, folderName);
+  if (!folder) throw new Error(`Folder "${folderName}" not found`);
+  const channel = folder.channels.find((ch) => ch.id === channelId);
+  if (!channel) throw new Error(`Channel "${channelId}" not found in "${folderName}"`);
+  channel.name = newName;
+}
+
+function moveChannel(data, sourceFolderName, channelId, destFolderName) {
+  if (sourceFolderName === destFolderName) return;
+
+  const source = findFolder(data.folders, sourceFolderName);
+  if (!source) throw new Error(`Source folder "${sourceFolderName}" not found`);
+  const dest = findFolder(data.folders, destFolderName);
+  if (!dest) throw new Error(`Destination folder "${destFolderName}" not found`);
+
+  const idx = source.channels.findIndex((ch) => ch.id === channelId);
+  if (idx === -1) throw new Error(`Channel "${channelId}" not found in "${sourceFolderName}"`);
+
+  // Don't duplicate if already in destination
+  if (dest.channels.some((ch) => ch.id === channelId)) {
+    source.channels.splice(idx, 1);
+    return;
+  }
+
+  const [channel] = source.channels.splice(idx, 1);
+  dest.channels.push(channel);
+}
+
 module.exports = {
   loadData,
   saveData,
@@ -186,4 +215,6 @@ module.exports = {
   addChannel,
   removeChannel,
   getChannelList,
+  renameChannel,
+  moveChannel,
 };

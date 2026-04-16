@@ -10,6 +10,8 @@ module.exports = function (appState) {
     addChannel,
     removeChannel,
     getChannelList,
+    renameChannel,
+    moveChannel,
     saveData,
   } = require("../lib/data");
   const { resolveUrl } = require("../lib/youtube");
@@ -107,6 +109,39 @@ module.exports = function (appState) {
   router.delete("/:name/channels/:channelId", (req, res) => {
     try {
       removeChannel(appState.data, req.params.name, req.params.channelId);
+      save();
+      res.json({ ok: true, folders: summary() });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // PATCH /api/folders/:name/channels/:channelId — rename channel
+  router.patch("/:name/channels/:channelId", (req, res) => {
+    try {
+      const { name: newName } = req.body;
+      if (!newName || typeof newName !== "string" || !newName.trim()) {
+        return res.status(400).json({ error: "Channel name is required" });
+      }
+      if (newName.trim().length > 200) {
+        return res.status(400).json({ error: "Channel name too long" });
+      }
+      renameChannel(appState.data, req.params.name, req.params.channelId, newName.trim());
+      save();
+      res.json({ ok: true, name: newName.trim() });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // POST /api/folders/:name/channels/:channelId/move — move channel to another folder
+  router.post("/:name/channels/:channelId/move", (req, res) => {
+    try {
+      const { destFolder } = req.body;
+      if (!destFolder || typeof destFolder !== "string") {
+        return res.status(400).json({ error: "destFolder is required" });
+      }
+      moveChannel(appState.data, req.params.name, req.params.channelId, destFolder);
       save();
       res.json({ ok: true, folders: summary() });
     } catch (err) {

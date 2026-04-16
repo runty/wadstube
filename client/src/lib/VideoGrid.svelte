@@ -1,15 +1,19 @@
 <script>
   import VideoCard from "./VideoCard.svelte";
-  import { videos, refreshing, searchQuery } from "../stores/feed.js";
+  import { videos, refreshing, searchQuery, activeChannelId } from "../stores/feed.js";
+
+  $: byChannel = $activeChannelId
+    ? $videos.filter((v) => v.channel_id === $activeChannelId)
+    : $videos;
 
   $: filtered = $searchQuery
-    ? $videos.filter((v) => {
+    ? byChannel.filter((v) => {
         const q = $searchQuery.toLowerCase();
         return v.title?.toLowerCase().includes(q) ||
           v.channel?.toLowerCase().includes(q) ||
           v.description?.toLowerCase().includes(q);
       })
-    : $videos;
+    : byChannel;
 </script>
 
 <div class="grid-wrapper">
