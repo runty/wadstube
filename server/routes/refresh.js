@@ -15,17 +15,19 @@ module.exports = function (appState) {
     }
   }
 
-  async function runRefresh(channelIds) {
-    // Serialize against the background poller so we don't race.
+  async function runRefresh(channelIds, onEvent) {
     if (appState.refreshLock) {
       await appState.refreshLock;
     }
     let release;
     appState.refreshLock = new Promise((res) => { release = res; });
     try {
-      const summary = await refreshChannels(appState.db, channelIds, {
-        keep: appState.maxVideos,
-      });
+      const summary = await refreshChannels(
+        appState.db,
+        channelIds,
+        { keep: appState.maxVideos },
+        onEvent,
+      );
       syncNamesFromDb();
       return summary;
     } finally {
@@ -34,64 +36,90 @@ module.exports = function (appState) {
     }
   }
 
-  // Refresh all
-  router.post("/", async (req, res) => {
+  // Write a JSON line to an open response, returning false if the client
+  // has already disconnected so the caller can stop emitting.
+  function writeEvent(res, obj) {
+    if (res.writableEnded || res.destroyed) return false;
     try {
-      const allChannels = [];
-      for (const folder of appState.data.folders) {
-        allChannels.push(...collectAllChannelIds(folder));
-      }
-      const unique = [...new Set(allChannels)];
-      console.log(`Refreshing all: ${unique.length} channels`);
+      res.write(JSON.stringify(obj) + "\n");
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
-      const summary = await runRefresh(unique);
+  function startStream(res, total) {
+    res.setHeader("Content-Type", "application/x-ndjson");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("X-Accel-Buffering", "no"); // hint for reverse proxies
+    res.flushHeaders?.();
+    writeEvent(res, { type: "init", total });
+  }
+
+  async function streamRefresh(req, res, channelIds, meta = {}) {
+    const total = channelIds.length;
+    startStream(res, total);
+    let alive = true;
+    req.on("close", () => { alive = false; });
+
+    const onEvent = (ev) => {
+      if (!alive) return;
+      writeEvent(res, ev);
+    };
+
+    try {
+      const summary = await runRefresh(channelIds, onEvent);
       console.log(
-        `Refresh all done: ${summary.updated} with updates, ` +
+        `Refresh ${meta.label || "all"} done: ${summary.updated} with updates, ` +
           `${summary.new_videos} new videos, ${summary.errors} errors`,
       );
       const stats = appState.db.getStats();
-      res.json({
+      const videos = meta.folder
+        ? appState.db.getVideosForChannels(meta.channelIdsForFolder || channelIds)
+        : undefined;
+      writeEvent(res, {
+        type: "summary",
         refreshed: summary.updated,
         new_videos: summary.new_videos,
         errors: summary.errors,
         total_channels: stats.channelCount,
         total_videos: stats.videoCount,
+        videos,
       });
     } catch (err) {
-      console.error("Refresh all error:", err);
-      res.status(500).json({ error: err.message });
+      console.error(`Refresh ${meta.label || "all"} error:`, err);
+      writeEvent(res, { type: "error", error: err.message });
+    } finally {
+      res.end();
     }
+  }
+
+  // Refresh all
+  router.post("/", async (req, res) => {
+    const allChannels = [];
+    for (const folder of appState.data.folders) {
+      allChannels.push(...collectAllChannelIds(folder));
+    }
+    const unique = [...new Set(allChannels)];
+    console.log(`Refreshing all: ${unique.length} channels`);
+    await streamRefresh(req, res, unique, { label: "all" });
   });
 
   // Refresh specific folder
   router.post("/:folder", async (req, res) => {
-    try {
-      const folder = req.params.folder;
-      const channelIds = getChannelsForFolder(appState.data, folder);
-
-      if (channelIds.length === 0) {
-        return res.status(404).json({ error: `Folder "${folder}" not found` });
-      }
-
-      const unique = [...new Set(channelIds)];
-      console.log(`Refreshing folder "${folder}": ${unique.length} channels`);
-
-      const summary = await runRefresh(unique);
-      console.log(
-        `Refresh "${folder}" done: ${summary.updated} with updates, ` +
-          `${summary.new_videos} new videos, ${summary.errors} errors`,
-      );
-      const videos = appState.db.getVideosForChannels(channelIds);
-      res.json({
-        refreshed: summary.updated,
-        new_videos: summary.new_videos,
-        errors: summary.errors,
-        videos,
-      });
-    } catch (err) {
-      console.error(`Refresh ${req.params.folder} error:`, err);
-      res.status(500).json({ error: err.message });
+    const folder = req.params.folder;
+    const channelIds = getChannelsForFolder(appState.data, folder);
+    if (channelIds.length === 0) {
+      res.status(404).json({ error: `Folder "${folder}" not found` });
+      return;
     }
+    const unique = [...new Set(channelIds)];
+    console.log(`Refreshing folder "${folder}": ${unique.length} channels`);
+    await streamRefresh(req, res, unique, {
+      label: `"${folder}"`,
+      folder,
+      channelIdsForFolder: channelIds,
+    });
   });
 
   return router;

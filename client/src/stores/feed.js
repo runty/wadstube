@@ -11,6 +11,18 @@ export const toast = writable(null);
 export const searchQuery = writable("");
 export const activeChannelId = writable(null);
 
+// Live state of an in-progress refresh: total channels, how many finished,
+// counts, and up to CHANNEL_CONCURRENCY slots for currently-fetching
+// channels.
+export const refreshProgress = writable({
+  active: false,
+  total: 0,
+  done: 0,
+  newCount: 0,
+  errors: 0,
+  slots: [], // [{channelId, channelTitle}]
+});
+
 const API = "";
 
 export async function loadFolders() {
@@ -121,26 +133,81 @@ export async function moveChannelApi(sourceFolderName, channelId, destFolderName
 export async function refreshFolder(folder) {
   refreshing.set(true);
   error.set(null);
+  refreshProgress.set({ active: true, total: 0, done: 0, newCount: 0, errors: 0, slots: [] });
+
   try {
     const url =
       folder && folder !== "__all__"
         ? `${API}/api/refresh/${encodeURIComponent(folder)}`
         : `${API}/api/refresh`;
 
-    const resp = await fetch(url, { method: "POST" });
-    const data = await resp.json();
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { Accept: "application/x-ndjson" },
+    });
 
     if (!resp.ok) {
-      throw new Error(data.error || `Refresh failed (${resp.status})`);
+      let msg = `Refresh failed (${resp.status})`;
+      try {
+        const j = await resp.json();
+        if (j?.error) msg = j.error;
+      } catch {}
+      throw new Error(msg);
     }
 
-    // Reload videos for current view
+    let summary = null;
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 1);
+        if (!line) continue;
+        let ev;
+        try { ev = JSON.parse(line); } catch { continue; }
+        applyEvent(ev);
+        if (ev.type === "summary") summary = ev;
+        if (ev.type === "error") throw new Error(ev.error || "Refresh failed");
+      }
+    }
+
     await loadVideos(folder);
-    return data;
+    return summary;
   } catch (err) {
     error.set(err.message || "Something went wrong");
     throw err;
   } finally {
     refreshing.set(false);
+    refreshProgress.update((p) => ({ ...p, active: false }));
   }
+}
+
+function applyEvent(ev) {
+  refreshProgress.update((p) => {
+    if (ev.type === "init") {
+      return { ...p, total: ev.total, done: 0, newCount: 0, errors: 0, slots: [] };
+    }
+    if (ev.type === "start") {
+      return {
+        ...p,
+        slots: [...p.slots, { channelId: ev.channelId, channelTitle: ev.channelTitle }],
+      };
+    }
+    if (ev.type === "done") {
+      return {
+        ...p,
+        done: p.done + 1,
+        newCount: p.newCount + (ev.newVideos || 0),
+        errors: p.errors + (ev.status === "error" ? 1 : 0),
+        slots: p.slots.filter((s) => s.channelId !== ev.channelId),
+      };
+    }
+    return p;
+  });
 }
