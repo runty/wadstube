@@ -24,6 +24,10 @@
   let initialized = false;
 
   function runLoad() {
+    // Always jump back to the top when the visible set changes — switching
+    // folder/channel or typing in search shouldn't leave you scrolled deep
+    // into the previous view's results.
+    window.scrollTo({ top: 0, behavior: "instant" });
     loadVideos($activeFolder, {
       channelId: $activeChannelId || null,
       q: $searchQuery || null,
