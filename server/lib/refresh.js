@@ -1,7 +1,11 @@
 const { fetchChannelFeed } = require("./rss");
 const { checkIsShort, fetchChannelViaApi } = require("./youtube");
 
-const CHANNEL_CONCURRENCY = 5;
+// RSS shares a per-IP rate limit at YouTube — higher concurrency trips it.
+// The API endpoint is quota-bound, not rate-limited per-second, so we can
+// run it much wider.
+const CHANNEL_CONCURRENCY_RSS = 5;
+const CHANNEL_CONCURRENCY_API = 20;
 const SHORTS_CONCURRENCY = 10;
 
 let _pLimit;
@@ -42,7 +46,9 @@ async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
   if (!ids.length) return { checked: 0, updated: 0, new_videos: 0, errors: 0 };
 
   const pLimit = await getPLimit();
-  const channelLimit = pLimit(CHANNEL_CONCURRENCY);
+  const channelConcurrency =
+    mode === "api" ? CHANNEL_CONCURRENCY_API : CHANNEL_CONCURRENCY_RSS;
+  const channelLimit = pLimit(channelConcurrency);
   const shortLimit = pLimit(SHORTS_CONCURRENCY);
 
   let updated = 0;
