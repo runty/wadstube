@@ -6,7 +6,10 @@ const { checkIsShort, fetchChannelViaApi } = require("./youtube");
 // run it much wider.
 const CHANNEL_CONCURRENCY_RSS = 5;
 const CHANNEL_CONCURRENCY_API = 20;
-const SHORTS_CONCURRENCY = 10;
+// Shorts HEAD checks hit a different endpoint with its own (generous)
+// limits. The old pre-DB code ran 10 per-channel × 20 channels = ~200 in
+// flight and was fine; we match that ceiling with a shared pool.
+const SHORTS_CONCURRENCY = 200;
 
 let _pLimit;
 async function getPLimit() {
