@@ -16,9 +16,6 @@ module.exports = function (appState) {
   }
 
   async function runRefresh(channelIds, onEvent) {
-    if (appState.refreshLock) {
-      await appState.refreshLock;
-    }
     let release;
     appState.refreshLock = new Promise((res) => { release = res; });
     try {
@@ -94,8 +91,17 @@ module.exports = function (appState) {
     }
   }
 
+  function rejectIfBusy(res) {
+    if (!appState.refreshLock) return false;
+    res
+      .status(409)
+      .json({ error: "A refresh is already running (either manual or the background poller). Try again in a moment." });
+    return true;
+  }
+
   // Refresh all
   router.post("/", async (req, res) => {
+    if (rejectIfBusy(res)) return;
     const allChannels = [];
     for (const folder of appState.data.folders) {
       allChannels.push(...collectAllChannelIds(folder));
@@ -107,6 +113,7 @@ module.exports = function (appState) {
 
   // Refresh specific folder
   router.post("/:folder", async (req, res) => {
+    if (rejectIfBusy(res)) return;
     const folder = req.params.folder;
     const channelIds = getChannelsForFolder(appState.data, folder);
     if (channelIds.length === 0) {
