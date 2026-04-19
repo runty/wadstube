@@ -1,11 +1,14 @@
 const { XMLParser } = require("fast-xml-parser");
 
 const FEED_BASE = "https://www.youtube.com/feeds/videos.xml";
-const CONCURRENCY = 20;
+// Keep concurrency low — YouTube's RSS endpoint starts returning 404/5xx
+// under bursty traffic from a single IP. With ~2k channels, a wider fan-out
+// tripped the throttle on nearly every request during manual refreshes.
+const CONCURRENCY = 5;
 const FETCH_TIMEOUT = 10000;
-// YouTube's RSS endpoint occasionally returns transient 5xx/404 responses,
-// so we retry once before giving up on a channel this pass.
-const RETRY_DELAY_MS = 500;
+// Exponential retry delays in ms; length = number of retries after the
+// initial attempt.
+const RETRY_DELAYS_MS = [1000, 3000];
 const USER_AGENT = "WadsTube/1.0 (+https://github.com/phobus/wadstube)";
 
 const parser = new XMLParser({
@@ -85,15 +88,20 @@ async function fetchOnce(channelId, cached) {
 //     etag, lastModified, error? }
 async function fetchChannelFeed(channelId, cached = {}) {
   let resp;
+  let lastErr;
   try {
     resp = await fetchOnce(channelId, cached);
-    // Retry once on transient server errors — YouTube's feed endpoint flakes.
-    if (resp.status >= 500 || resp.status === 404) {
-      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    for (const delay of RETRY_DELAYS_MS) {
+      if (resp.status < 500 && resp.status !== 404) break;
+      await new Promise((r) => setTimeout(r, delay));
       resp = await fetchOnce(channelId, cached);
     }
   } catch (err) {
-    return { channelId, status: "error", videos: [], error: err.message };
+    lastErr = err;
+  }
+
+  if (!resp) {
+    return { channelId, status: "error", videos: [], error: lastErr?.message || "fetch failed" };
   }
 
   if (resp.status === 304) {

@@ -45,6 +45,10 @@ module.exports = function (appState) {
       console.log(`Refreshing all: ${unique.length} channels`);
 
       const summary = await runRefresh(unique);
+      console.log(
+        `Refresh all done: ${summary.updated} with updates, ` +
+          `${summary.new_videos} new videos, ${summary.errors} errors`,
+      );
       const stats = appState.db.getStats();
       res.json({
         refreshed: summary.updated,
@@ -73,6 +77,10 @@ module.exports = function (appState) {
       console.log(`Refreshing folder "${folder}": ${unique.length} channels`);
 
       const summary = await runRefresh(unique);
+      console.log(
+        `Refresh "${folder}" done: ${summary.updated} with updates, ` +
+          `${summary.new_videos} new videos, ${summary.errors} errors`,
+      );
       const videos = appState.db.getVideosForChannels(channelIds);
       res.json({
         refreshed: summary.updated,
