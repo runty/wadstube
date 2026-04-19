@@ -1,4 +1,4 @@
-const { refreshChannels } = require("./refresh");
+const { refreshChannels, tryAcquireLock, releaseLock } = require("./refresh");
 
 // Start a background timer that refreshes all channels via RSS every
 // `intervalMinutes`. A value of 0 disables the poller entirely. While a
@@ -20,18 +20,19 @@ function startPoller(appState, { intervalMinutes, collectAllChannelIds, syncChan
     }
     running = true;
     try {
-      if (appState.refreshLock) await appState.refreshLock;
-
-      const ids = [];
-      for (const folder of appState.data.folders) {
-        ids.push(...collectAllChannelIds(folder));
+      const handle = tryAcquireLock(appState);
+      if (!handle) {
+        console.log("[poller] manual refresh in progress, skipping this tick");
+        return;
       }
-      const unique = [...new Set(ids)];
-      if (unique.length === 0) return;
-
-      let release;
-      appState.refreshLock = new Promise((res) => { release = res; });
       try {
+        const ids = [];
+        for (const folder of appState.data.folders) {
+          ids.push(...collectAllChannelIds(folder));
+        }
+        const unique = [...new Set(ids)];
+        if (unique.length === 0) return;
+
         const summary = await refreshChannels(appState.db, unique, {
           keep: appState.maxVideos,
           mode: appState.pollerMode,
@@ -46,8 +47,7 @@ function startPoller(appState, { intervalMinutes, collectAllChannelIds, syncChan
             `${summary.errors} errors`,
         );
       } finally {
-        release();
-        appState.refreshLock = null;
+        releaseLock(appState, handle);
       }
     } catch (err) {
       console.error(`[poller] tick failed: ${err.message}`);

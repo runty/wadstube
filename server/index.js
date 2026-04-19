@@ -3,7 +3,7 @@ require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") }
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
-const { loadData, getFolderTreeSummary, syncChannelNames, saveData, collectAllChannelIds } =
+const { loadData, getFolderTreeSummary, syncChannelNames, saveData, collectAllChannelIds, normalizeTubeData } =
   require("./lib/data");
 const { resolveUrl } = require("./lib/youtube");
 const Db = require("./lib/db");
@@ -68,7 +68,7 @@ console.log(`DB: ${stats.channelCount} channels, ${stats.videoCount} videos`);
 
 // Nightly backups (GFS retention: 4 daily + 4 weekly + 4 monthly)
 const { scheduleBackups } = require("./lib/backup");
-scheduleBackups(DATA_DIR, db);
+scheduleBackups(DATA_DIR, db, appState);
 
 // Background RSS poller (opt-out with REFRESH_INTERVAL_MINUTES=0)
 const { startPoller } = require("./lib/poller");
@@ -82,7 +82,9 @@ startPoller(appState, {
 // Express app
 const app = express();
 app.use(cors());
-app.use(express.json());
+// 5 MB is comfortably larger than a realistic tube.json (a 2,400-channel
+// backup is ~300 KB). The default 100 KB silently rejects real restores.
+app.use(express.json({ limit: "5mb" }));
 
 app.use("/api/folders", require("./routes/folders")(appState));
 app.use("/api/videos", require("./routes/videos")(appState));
@@ -100,8 +102,15 @@ app.get("/api/backup", (req, res) => {
 app.post("/api/restore", (req, res) => {
   try {
     const uploaded = req.body;
-    if (!uploaded || !uploaded.version || !Array.isArray(uploaded.folders)) {
-      return res.status(400).json({ error: "Invalid backup file. Must be a tube.json with version and folders." });
+    if (!uploaded || typeof uploaded !== "object" || !Array.isArray(uploaded.folders)) {
+      return res.status(400).json({ error: "Invalid backup file. Must be a tube.json with a folders array." });
+    }
+
+    // Deep-normalize the uploaded tree: coerce missing arrays, drop
+    // malformed channels/folders, cap nesting depth, strip prototype keys.
+    const clean = normalizeTubeData(uploaded);
+    if (clean.folders.length === 0 && uploaded.folders.length > 0) {
+      return res.status(400).json({ error: "Backup folders failed validation (bad shape or channel IDs)." });
     }
 
     const fs = require("fs");
@@ -110,7 +119,7 @@ app.post("/api/restore", (req, res) => {
     fs.writeFileSync(backupPath, JSON.stringify(appState.data, null, 2), "utf-8");
     console.log(`Saved pre-restore backup to ${backupPath}`);
 
-    appState.data = uploaded;
+    appState.data = clean;
     saveData(DATA_DIR, appState.data);
 
     res.json({ ok: true, folders: getFolderTreeSummary(appState.data) });

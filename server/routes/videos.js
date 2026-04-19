@@ -6,11 +6,17 @@ const DEFAULT_LIMIT = 200;
 module.exports = function (appState) {
   const { getChannelsForFolder } = require("../lib/data");
 
+  const Q_MAX_LEN = 200;
+
   router.get("/", (req, res) => {
     const folder = req.query.folder;
     const channelId = req.query.channel || undefined;
-    const q = req.query.q || undefined;
+    let q = req.query.q || undefined;
+    if (typeof q === "string" && q.length > Q_MAX_LEN) {
+      q = q.slice(0, Q_MAX_LEN);
+    }
     const before = req.query.before || undefined;
+    const beforeId = req.query.before_id || undefined;
     const limit = Math.min(
       Math.max(parseInt(req.query.limit, 10) || DEFAULT_LIMIT, 1),
       500,
@@ -32,6 +38,7 @@ module.exports = function (appState) {
       channelId,
       q,
       before,
+      beforeId,
       limit: limit + 1,
     });
     const hasMore = rows.length > limit;

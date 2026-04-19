@@ -13,7 +13,18 @@ module.exports = function (appState) {
     renameChannel,
     moveChannel,
     saveData,
+    allReferencedChannelIds,
   } = require("../lib/data");
+
+  // After mutations that may remove channels from the tree, drop their
+  // rows from the DB so queryVideos doesn't surface ghost subscriptions.
+  function purgeOrphans() {
+    const referenced = allReferencedChannelIds(appState.data);
+    const removed = appState.db.purgeOrphanChannels(referenced);
+    if (removed > 0) {
+      console.log(`Purged ${removed} orphan channel(s) from the DB`);
+    }
+  }
   const { resolveUrl } = require("../lib/youtube");
 
   function save() {
@@ -67,6 +78,7 @@ module.exports = function (appState) {
     try {
       deleteFolder(appState.data, req.params.name);
       save();
+      purgeOrphans();
       res.json({ ok: true, folders: summary() });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -110,6 +122,7 @@ module.exports = function (appState) {
     try {
       removeChannel(appState.data, req.params.name, req.params.channelId);
       save();
+      purgeOrphans();
       res.json({ ok: true, folders: summary() });
     } catch (err) {
       res.status(400).json({ error: err.message });

@@ -142,4 +142,32 @@ async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
   return { checked: ids.length, updated, new_videos: newVideoCount, errors };
 }
 
-module.exports = { refreshChannels };
+// Atomically try to take the refresh lock. Returns null if someone else
+// holds it, otherwise returns a handle that can be passed to releaseLock.
+// Both operations are synchronous so the check + set can't be split by
+// Node's event loop.
+function tryAcquireLock(appState) {
+  if (appState.refreshLock) return null;
+  let release;
+  const lock = new Promise((r) => { release = r; });
+  appState.refreshLock = lock;
+  return { lock, release };
+}
+
+function releaseLock(appState, handle) {
+  if (!handle) return;
+  handle.release();
+  // Only clear if we're still the current holder; a late release from a
+  // superseded run must not wipe out a lock owned by a newer run.
+  if (appState.refreshLock === handle.lock) appState.refreshLock = null;
+}
+
+// Wait for any in-flight refresh to finish (regardless of who holds the
+// lock). Used by the nightly backup so VACUUM INTO doesn't race writes.
+async function waitForRefreshIdle(appState) {
+  while (appState.refreshLock) {
+    await appState.refreshLock;
+  }
+}
+
+module.exports = { refreshChannels, tryAcquireLock, releaseLock, waitForRefreshIdle };

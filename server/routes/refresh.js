@@ -4,7 +4,7 @@ const router = express.Router();
 module.exports = function (appState) {
   const { getChannelsForFolder, collectAllChannelIds, syncChannelNames, saveData } =
     require("../lib/data");
-  const { refreshChannels } = require("../lib/refresh");
+  const { refreshChannels, tryAcquireLock, releaseLock } = require("../lib/refresh");
 
   function syncNamesFromDb() {
     const names = appState.db.getChannelNames();
@@ -16,25 +16,18 @@ module.exports = function (appState) {
   }
 
   async function runRefresh(channelIds, onEvent) {
-    let release;
-    appState.refreshLock = new Promise((res) => { release = res; });
-    try {
-      const summary = await refreshChannels(
-        appState.db,
-        channelIds,
-        {
-          keep: appState.maxVideos,
-          mode: appState.manualMode,
-          apiKey: appState.apiKey,
-        },
-        onEvent,
-      );
-      syncNamesFromDb();
-      return summary;
-    } finally {
-      release();
-      appState.refreshLock = null;
-    }
+    const summary = await refreshChannels(
+      appState.db,
+      channelIds,
+      {
+        keep: appState.maxVideos,
+        mode: appState.manualMode,
+        apiKey: appState.apiKey,
+      },
+      onEvent,
+    );
+    syncNamesFromDb();
+    return summary;
   }
 
   // Write a JSON line to an open response, returning false if the client
@@ -94,42 +87,54 @@ module.exports = function (appState) {
     }
   }
 
-  function rejectIfBusy(res) {
-    if (!appState.refreshLock) return false;
-    res
-      .status(409)
-      .json({ error: "A refresh is already running (either manual or the background poller). Try again in a moment." });
-    return true;
+  function tryAcquireOrReject(res) {
+    const handle = tryAcquireLock(appState);
+    if (!handle) {
+      res.status(409).json({
+        error: "A refresh is already running (either manual or the background poller). Try again in a moment.",
+      });
+    }
+    return handle;
   }
 
   // Refresh all
   router.post("/", async (req, res) => {
-    if (rejectIfBusy(res)) return;
-    const allChannels = [];
-    for (const folder of appState.data.folders) {
-      allChannels.push(...collectAllChannelIds(folder));
+    const handle = tryAcquireOrReject(res);
+    if (!handle) return;
+    try {
+      const allChannels = [];
+      for (const folder of appState.data.folders) {
+        allChannels.push(...collectAllChannelIds(folder));
+      }
+      const unique = [...new Set(allChannels)];
+      console.log(`Refreshing all: ${unique.length} channels`);
+      await streamRefresh(req, res, unique, { label: "all" });
+    } finally {
+      releaseLock(appState, handle);
     }
-    const unique = [...new Set(allChannels)];
-    console.log(`Refreshing all: ${unique.length} channels`);
-    await streamRefresh(req, res, unique, { label: "all" });
   });
 
   // Refresh specific folder
   router.post("/:folder", async (req, res) => {
-    if (rejectIfBusy(res)) return;
-    const folder = req.params.folder;
-    const channelIds = getChannelsForFolder(appState.data, folder);
-    if (channelIds.length === 0) {
-      res.status(404).json({ error: `Folder "${folder}" not found` });
-      return;
+    const handle = tryAcquireOrReject(res);
+    if (!handle) return;
+    try {
+      const folder = req.params.folder;
+      const channelIds = getChannelsForFolder(appState.data, folder);
+      if (channelIds.length === 0) {
+        res.status(404).json({ error: `Folder "${folder}" not found` });
+        return;
+      }
+      const unique = [...new Set(channelIds)];
+      console.log(`Refreshing folder "${folder}": ${unique.length} channels`);
+      await streamRefresh(req, res, unique, {
+        label: `"${folder}"`,
+        folder,
+        channelIdsForFolder: channelIds,
+      });
+    } finally {
+      releaseLock(appState, handle);
     }
-    const unique = [...new Set(channelIds)];
-    console.log(`Refreshing folder "${folder}": ${unique.length} channels`);
-    await streamRefresh(req, res, unique, {
-      label: `"${folder}"`,
-      folder,
-      channelIdsForFolder: channelIds,
-    });
   });
 
   return router;

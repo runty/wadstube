@@ -2,6 +2,59 @@ const fs = require("fs");
 const path = require("path");
 const { migrate } = require("./migrate");
 
+const MAX_FOLDER_DEPTH = 4;
+const CHANNEL_ID_RE = /^UC[A-Za-z0-9_-]{22}$/;
+
+// Recursively coerce a (possibly user-supplied) folder tree into the shape
+// the rest of the server expects: every folder has channels[] + children[],
+// names are strings, channel ids look like YouTube channel ids, and
+// dangerous prototype keys are dropped. Anything malformed is ignored
+// rather than crashed on.
+function normalizeFolders(input, depth = 0) {
+  if (!Array.isArray(input) || depth > MAX_FOLDER_DEPTH) return [];
+  const out = [];
+  for (const raw of input) {
+    if (!raw || typeof raw !== "object") continue;
+    const name = typeof raw.name === "string" ? raw.name : null;
+    if (!name) continue;
+    const id = typeof raw.id === "string" ? raw.id : slugify(name);
+    const channels = [];
+    if (Array.isArray(raw.channels)) {
+      for (const ch of raw.channels) {
+        if (!ch || typeof ch !== "object") continue;
+        const chId = typeof ch.id === "string" ? ch.id : null;
+        if (!chId || !CHANNEL_ID_RE.test(chId)) continue;
+        const entry = {
+          id: chId,
+          name: typeof ch.name === "string" ? ch.name : "Unknown",
+          addedAt: typeof ch.addedAt === "string" ? ch.addedAt : new Date().toISOString(),
+        };
+        if (ch.userRenamed === true) entry.userRenamed = true;
+        channels.push(entry);
+      }
+    }
+    out.push({
+      id,
+      name,
+      channels,
+      children: normalizeFolders(raw.children, depth + 1),
+    });
+  }
+  return out;
+}
+
+// Top-level shape check + normalization for either an on-disk tube.json or
+// an uploaded restore payload.
+function normalizeTubeData(input) {
+  if (!input || typeof input !== "object") {
+    return { version: 1, folders: [] };
+  }
+  return {
+    version: typeof input.version === "number" ? input.version : 1,
+    folders: normalizeFolders(input.folders),
+  };
+}
+
 function loadData(dataDir) {
   // Ensure the data directory exists
   if (!fs.existsSync(dataDir)) {
@@ -13,7 +66,7 @@ function loadData(dataDir) {
   if (fs.existsSync(tubePath)) {
     console.log(`Loading data from: ${tubePath}`);
     try {
-      return JSON.parse(fs.readFileSync(tubePath, "utf-8"));
+      return normalizeTubeData(JSON.parse(fs.readFileSync(tubePath, "utf-8")));
     } catch (err) {
       console.error(`Failed to parse ${tubePath}: ${err.message}`);
       const backup = tubePath + ".corrupt." + Date.now();
@@ -73,7 +126,7 @@ function findFolderParent(folders, name) {
 }
 
 function collectAllChannelIds(folder) {
-  const ids = folder.channels.map((ch) => ch.id);
+  const ids = (folder.channels || []).map((ch) => ch.id);
   for (const child of folder.children || []) {
     ids.push(...collectAllChannelIds(child));
   }
@@ -195,6 +248,8 @@ function renameChannel(data, folderName, channelId, newName) {
   const channel = folder.channels.find((ch) => ch.id === channelId);
   if (!channel) throw new Error(`Channel "${channelId}" not found in "${folderName}"`);
   channel.name = newName;
+  // Pin the name so syncChannelNames doesn't revert it later.
+  channel.userRenamed = true;
 }
 
 function moveChannel(data, sourceFolderName, channelId, destFolderName) {
@@ -223,7 +278,10 @@ function moveChannel(data, sourceFolderName, channelId, destFolderName) {
 function syncChannelNames(data, channelIdToName) {
   let updated = 0;
   function walk(folder) {
-    for (const ch of folder.channels) {
+    for (const ch of folder.channels || []) {
+      // Skip channels the user has renamed in the sidebar — their choice
+      // should stick even if YouTube's display title changes.
+      if (ch.userRenamed) continue;
       const newName = channelIdToName[ch.id];
       if (newName && newName !== ch.name) {
         ch.name = newName;
@@ -232,8 +290,20 @@ function syncChannelNames(data, channelIdToName) {
     }
     for (const child of folder.children || []) walk(child);
   }
-  for (const folder of data.folders) walk(folder);
+  for (const folder of data.folders || []) walk(folder);
   return updated;
+}
+
+// Returns the set of channel ids referenced anywhere in the folder tree.
+// Used after a delete/move so we know which DB channels are now orphaned.
+function allReferencedChannelIds(data) {
+  const ids = new Set();
+  function walk(folder) {
+    for (const ch of folder.channels || []) ids.add(ch.id);
+    for (const child of folder.children || []) walk(child);
+  }
+  for (const folder of data.folders || []) walk(folder);
+  return ids;
 }
 
 module.exports = {
@@ -252,4 +322,6 @@ module.exports = {
   syncChannelNames,
   renameChannel,
   moveChannel,
+  normalizeTubeData,
+  allReferencedChannelIds,
 };

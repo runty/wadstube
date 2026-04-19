@@ -134,8 +134,14 @@ function applyRetention(dataDir) {
   return { kept, deleted, daily, weekly, monthly };
 }
 
-function runBackupNow(dataDir, db) {
+async function runBackupNow(dataDir, db, appState) {
   try {
+    // Wait out any in-flight refresh so VACUUM INTO doesn't race with
+    // SQLite writes. Noop if no appState was wired (e.g. test harness).
+    if (appState) {
+      const { waitForRefreshIdle } = require("./refresh");
+      await waitForRefreshIdle(appState);
+    }
     const { dir, files } = createBackup(dataDir, db);
     const { kept, deleted } = applyRetention(dataDir);
     console.log(
@@ -156,11 +162,11 @@ function msUntilNext1am(now = new Date()) {
 }
 
 // Kick off a backup if the most recent one is older than 25 hours (or none exists).
-function catchUpIfStale(dataDir, db) {
+function catchUpIfStale(dataDir, db, appState) {
   const names = listBackups(dataDir);
   if (names.length === 0) {
     console.log("[backup] no prior backup found, creating initial backup");
-    runBackupNow(dataDir, db);
+    runBackupNow(dataDir, db, appState);
     return;
   }
   const latest = names[0]; // newest first
@@ -169,20 +175,20 @@ function catchUpIfStale(dataDir, db) {
   const ageHours = (Date.now() - latestDate.getTime()) / 3600000;
   if (ageHours > 25) {
     console.log(`[backup] most recent backup is ${ageHours.toFixed(0)}h old, creating catch-up backup`);
-    runBackupNow(dataDir, db);
+    runBackupNow(dataDir, db, appState);
   }
 }
 
-function scheduleBackups(dataDir, db) {
+function scheduleBackups(dataDir, db, appState) {
   ensureBackupsDir(dataDir);
-  catchUpIfStale(dataDir, db);
+  catchUpIfStale(dataDir, db, appState);
 
   function scheduleNext() {
     const delay = msUntilNext1am();
     const when = new Date(Date.now() + delay);
     console.log(`[backup] next run at ${when.toString()} (in ${(delay / 3600000).toFixed(1)}h)`);
     setTimeout(() => {
-      runBackupNow(dataDir, db);
+      runBackupNow(dataDir, db, appState);
       scheduleNext(); // recompute next 1am to be DST-safe
     }, delay);
   }

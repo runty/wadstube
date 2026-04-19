@@ -31,6 +31,7 @@ const API = "";
 
 export async function loadFolders() {
   const resp = await fetch(`${API}/api/folders`);
+  if (!resp.ok) throw new Error(`Failed to load folders (${resp.status})`);
   folders.set(await resp.json());
 }
 
@@ -39,12 +40,13 @@ export async function loadFolders() {
 let _loadSeq = 0;
 const _currentQuery = { folder: null, channelId: null, q: null };
 
-function buildVideosUrl({ folder, channelId, q, before }) {
+function buildVideosUrl({ folder, channelId, q, before, beforeId }) {
   const params = new URLSearchParams();
   if (folder && folder !== "__all__") params.set("folder", folder);
   if (channelId) params.set("channel", channelId);
   if (q) params.set("q", q);
   if (before) params.set("before", before);
+  if (beforeId) params.set("before_id", beforeId);
   const s = params.toString();
   return `${API}/api/videos${s ? `?${s}` : ""}`;
 }
@@ -70,11 +72,13 @@ export async function loadMoreVideos() {
   if (get(loadingMore) || !get(hasMoreVideos)) return;
   const current = get(videos);
   if (!current.length) return;
-  const before = current[current.length - 1].published;
+  const tail = current[current.length - 1];
+  const before = tail.published;
+  const beforeId = tail.video_id;
   loadingMore.set(true);
   const seq = _loadSeq;
   try {
-    const resp = await fetch(buildVideosUrl({ ..._currentQuery, before }));
+    const resp = await fetch(buildVideosUrl({ ..._currentQuery, before, beforeId }));
     if (!resp.ok) throw new Error(`Failed to load more (${resp.status})`);
     const data = await resp.json();
     // Abandon the page if the user has changed filters in the meantime.
@@ -125,6 +129,7 @@ export async function deleteFolderApi(name) {
 
 export async function loadChannels(folderName) {
   const resp = await fetch(`${API}/api/folders/${encodeURIComponent(folderName)}/channels`);
+  if (!resp.ok) throw new Error(`Failed to load channels (${resp.status})`);
   return await resp.json();
 }
 
@@ -226,6 +231,11 @@ export async function refreshFolder(folder) {
         if (ev.type === "error") throw new Error(ev.error || "Refresh failed");
       }
     }
+
+    // If the server closed the stream without emitting a summary, the
+    // refresh finished partially (proxy idle timeout, network blip, etc).
+    // Don't pretend it was successful.
+    if (!summary) throw new Error("Refresh stream ended before completion");
 
     await loadVideos(folder, {
       channelId: get(activeChannelId) || null,

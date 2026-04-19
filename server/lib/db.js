@@ -140,18 +140,11 @@ class Db {
 
   // --- reads ---
 
-  getVideosForChannels(channelIds) {
-    return this.queryVideos({ channelIds });
-  }
-
-  getAllVideos() {
-    return this.queryVideos({});
-  }
-
   // Unified video query with optional channel scope, single-channel filter,
-  // full-text-ish search, keyset pagination (before = ISO timestamp, older
-  // than which we want the next page), and a hard limit.
-  queryVideos({ channelIds, channelId, q, before, limit } = {}) {
+  // full-text-ish search, composite keyset pagination (before + before_id
+  // for the next page — both needed so ties on `published` don't skip
+  // rows), and a hard limit.
+  queryVideos({ channelIds, channelId, q, before, beforeId, limit } = {}) {
     const wheres = ["v.is_short = 0"];
     const params = [];
 
@@ -168,7 +161,11 @@ class Db {
       wheres.push("(v.title LIKE ? OR v.description LIKE ? OR c.title LIKE ?)");
       params.push(like, like, like);
     }
-    if (before) {
+    if (before && beforeId) {
+      // Tiebreak on video_id when multiple rows share `published`.
+      wheres.push("(v.published < ? OR (v.published = ? AND v.video_id < ?))");
+      params.push(before, before, beforeId);
+    } else if (before) {
       wheres.push("v.published < ?");
       params.push(before);
     }
@@ -181,7 +178,7 @@ class Db {
        FROM videos v
        LEFT JOIN channels c ON c.id = v.channel_id
        WHERE ${wheres.join(" AND ")}
-       ORDER BY v.published DESC
+       ORDER BY v.published DESC, v.video_id DESC
        LIMIT ?`;
     params.push(capped);
 
@@ -201,15 +198,31 @@ class Db {
     return { channelCount: s.channels, videoCount: s.videos };
   }
 
-  // Remove a channel and its videos (e.g. after the last folder reference
-  // is deleted). Currently unused — channels stay so we keep the feed even
-  // if a folder is removed; exposed for future cleanup jobs.
+  // Remove a single channel and its videos.
   removeChannel(channelId) {
     const tx = this.db.transaction(() => {
       this.stmts.deleteChannelVideos.run(channelId);
       this.stmts.deleteChannel.run(channelId);
     });
     tx();
+  }
+
+  // Delete every channel (and its videos) whose id isn't in the given
+  // referenced set. Called after a folder/channel deletion in tube.json
+  // so the DB doesn't accumulate rows for subscriptions that no longer
+  // exist anywhere in the folder tree. Returns the number purged.
+  purgeOrphanChannels(referencedIds) {
+    const rows = this.stmts.allChannelIds.all();
+    const stale = rows.filter((r) => !referencedIds.has(r.id)).map((r) => r.id);
+    if (!stale.length) return 0;
+    const tx = this.db.transaction(() => {
+      for (const id of stale) {
+        this.stmts.deleteChannelVideos.run(id);
+        this.stmts.deleteChannel.run(id);
+      }
+    });
+    tx();
+    return stale.length;
   }
 
   // --- backup ---
