@@ -11,6 +11,7 @@ services:
       - PORT=3000
       - MAX_VIDEOS=${MAX_VIDEOS:-50}
       - REFRESH_INTERVAL_MINUTES=${REFRESH_INTERVAL_MINUTES:-30}
+      - REFRESH_MODE=${REFRESH_MODE:-rss}
       - TZ=${TZ:-America/Los_Angeles}
     restart: unless-stopped
     mem_limit: 512m

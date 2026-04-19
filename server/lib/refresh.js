@@ -1,5 +1,5 @@
 const { fetchChannelFeed } = require("./rss");
-const { checkIsShort } = require("./youtube");
+const { checkIsShort, fetchChannelViaApi } = require("./youtube");
 
 const CHANNEL_CONCURRENCY = 5;
 const SHORTS_CONCURRENCY = 10;
@@ -34,7 +34,10 @@ async function classifyNewVideos(db, videos, limit) {
 //   { type:"done",  channelId, channelTitle, status, newVideos, error? }
 // Returns a summary { checked, updated, new_videos, errors }.
 async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
-  const { keep = 50 } = opts;
+  const { keep = 50, mode = "rss", apiKey = null } = opts;
+  if (mode === "api" && !apiKey) {
+    throw new Error("REFRESH_MODE=api requires YOUTUBE_API_KEY");
+  }
   const ids = [...new Set(channelIds)];
   if (!ids.length) return { checked: 0, updated: 0, new_videos: 0, errors: 0 };
 
@@ -56,10 +59,12 @@ async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
     if (onEvent) onEvent({ type: "start", channelId: id, channelTitle: meta.title });
 
     const now = new Date().toISOString();
-    const feed = await fetchChannelFeed(id, {
-      last_etag: meta.last_etag,
-      last_modified: meta.last_modified,
-    });
+    const feed = mode === "api"
+      ? await fetchChannelViaApi(apiKey, id)
+      : await fetchChannelFeed(id, {
+          last_etag: meta.last_etag,
+          last_modified: meta.last_modified,
+        });
 
     if (feed.status === "error") {
       errors++;

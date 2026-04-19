@@ -113,4 +113,58 @@ async function resolveUrl(apiKey, url) {
   throw new Error("Could not parse YouTube URL");
 }
 
-module.exports = { resolveUrl, checkIsShort };
+// Fetch recent uploads via the YouTube Data API's playlistItems endpoint.
+// Costs 1 quota unit per call regardless of maxResults. Returns the same
+// shape as rss.fetchChannelFeed so refresh.js can dispatch on mode.
+async function fetchChannelViaApi(apiKey, channelId) {
+  const uploadsId = "UU" + channelId.slice(2);
+  const params = new URLSearchParams({
+    part: "snippet",
+    playlistId: uploadsId,
+    maxResults: "50",
+    key: apiKey,
+  });
+
+  let resp;
+  try {
+    resp = await fetchWithTimeout(`${API_BASE}/playlistItems?${params}`);
+  } catch (err) {
+    return { channelId, status: "error", videos: [], error: err.message };
+  }
+
+  if (!resp.ok) {
+    return {
+      channelId,
+      status: "error",
+      videos: [],
+      error: `HTTP ${resp.status}`,
+    };
+  }
+
+  const data = await resp.json();
+  let channelTitle = null;
+  const videos = [];
+  for (const item of data.items || []) {
+    const snippet = item.snippet || {};
+    const videoId = snippet.resourceId?.videoId;
+    if (!videoId) continue;
+    if (!channelTitle) channelTitle = snippet.channelTitle || null;
+    const thumbs = snippet.thumbnails || {};
+    const thumb =
+      thumbs.medium?.url ||
+      thumbs.default?.url ||
+      `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
+    videos.push({
+      video_id: videoId,
+      channel_id: snippet.channelId || channelId,
+      title: snippet.title || "Untitled",
+      description: snippet.description || "",
+      thumbnail: thumb,
+      published: snippet.publishedAt || new Date().toISOString(),
+    });
+  }
+
+  return { channelId, status: "ok", videos, channelTitle };
+}
+
+module.exports = { resolveUrl, checkIsShort, fetchChannelViaApi };

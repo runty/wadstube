@@ -22,7 +22,11 @@ module.exports = function (appState) {
       const summary = await refreshChannels(
         appState.db,
         channelIds,
-        { keep: appState.maxVideos },
+        {
+          keep: appState.maxVideos,
+          mode: appState.refreshMode,
+          apiKey: appState.apiKey,
+        },
         onEvent,
       );
       syncNamesFromDb();

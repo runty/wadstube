@@ -17,7 +17,13 @@ const REFRESH_INTERVAL_MINUTES = parseInt(
   process.env.REFRESH_INTERVAL_MINUTES || "30",
   10,
 );
+const REFRESH_MODE = (process.env.REFRESH_MODE || "rss").toLowerCase();
 const API_KEY = process.env.YOUTUBE_API_KEY;
+
+if (!["rss", "api"].includes(REFRESH_MODE)) {
+  console.error(`Invalid REFRESH_MODE "${REFRESH_MODE}" — use "rss" or "api"`);
+  process.exit(1);
+}
 
 if (!API_KEY) {
   console.error("YOUTUBE_API_KEY is required in .env");
@@ -34,8 +40,11 @@ const appState = {
   db,
   apiKey: API_KEY,
   maxVideos: MAX_VIDEOS,
+  refreshMode: REFRESH_MODE,
   refreshLock: null,
 };
+
+console.log(`Refresh mode: ${REFRESH_MODE}`);
 
 // Sync channel names from DB into tube.json (no network calls)
 const initialNameUpdates = syncChannelNames(data, db.getChannelNames());

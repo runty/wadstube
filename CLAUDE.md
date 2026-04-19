@@ -47,9 +47,10 @@ ssh shrimp 'bash ~/wadstube-redeploy.sh'
 
 ## Environment
 
-- `YOUTUBE_API_KEY` — required, used only for URL/handle resolution at channel-add time
+- `YOUTUBE_API_KEY` — required, used for URL/handle resolution at channel-add time, and for refresh when `REFRESH_MODE=api`
 - `MAX_VIDEOS` — retention cap per channel in the DB (default 50)
 - `REFRESH_INTERVAL_MINUTES` — background poller cadence; `0` disables (default 30)
+- `REFRESH_MODE` — `rss` (default, free, subject to YouTube's per-IP rate limiter) or `api` (1 quota unit per channel per refresh; ~4 full passes/day at 2.4k channels on the 10k/day free quota)
 - `DATA_DIR`, `PORT`, `TZ` — as before
 
 ## Constraints

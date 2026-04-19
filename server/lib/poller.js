@@ -34,6 +34,8 @@ function startPoller(appState, { intervalMinutes, collectAllChannelIds, syncChan
       try {
         const summary = await refreshChannels(appState.db, unique, {
           keep: appState.maxVideos,
+          mode: appState.refreshMode,
+          apiKey: appState.apiKey,
         });
         const names = appState.db.getChannelNames();
         const updated = syncChannelNames(appState.data, names);
