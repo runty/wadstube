@@ -180,7 +180,9 @@ export async function refreshFolder(folder) {
     await loadVideos(folder);
     return summary;
   } catch (err) {
-    error.set(err.message || "Something went wrong");
+    const msg = (err?.message || "").trim() || "Something went wrong";
+    if (!err?.message) console.error("refresh failed without a message:", err);
+    error.set(msg);
     throw err;
   } finally {
     refreshing.set(false);

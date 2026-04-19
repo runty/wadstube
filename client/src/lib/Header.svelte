@@ -105,7 +105,7 @@
   </button>
 </header>
 
-{#if $error}
+{#if $error && String($error).trim()}
   <div class="error-bar">
     <span>{$error}</span>
     <button class="dismiss" on:click={dismissError}>&times;</button>
