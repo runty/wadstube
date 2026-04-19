@@ -1,4 +1,4 @@
-import { writable } from "svelte/store";
+import { writable, get } from "svelte/store";
 
 export const folders = writable([]);
 export const videos = writable([]);
@@ -23,6 +23,10 @@ export const refreshProgress = writable({
   slots: [], // [{channelId, channelTitle}]
 });
 
+// Pagination state for the currently-loaded video list.
+export const hasMoreVideos = writable(false);
+export const loadingMore = writable(false);
+
 const API = "";
 
 export async function loadFolders() {
@@ -30,10 +34,56 @@ export async function loadFolders() {
   folders.set(await resp.json());
 }
 
-export async function loadVideos(folder) {
-  const param = folder && folder !== "__all__" ? `?folder=${encodeURIComponent(folder)}` : "";
-  const resp = await fetch(`${API}/api/videos${param}`);
-  videos.set(await resp.json());
+// Sequence counter so late-arriving responses from a superseded query
+// don't stomp the current one (e.g. while you're typing in search).
+let _loadSeq = 0;
+const _currentQuery = { folder: null, channelId: null, q: null };
+
+function buildVideosUrl({ folder, channelId, q, before }) {
+  const params = new URLSearchParams();
+  if (folder && folder !== "__all__") params.set("folder", folder);
+  if (channelId) params.set("channel", channelId);
+  if (q) params.set("q", q);
+  if (before) params.set("before", before);
+  const s = params.toString();
+  return `${API}/api/videos${s ? `?${s}` : ""}`;
+}
+
+export async function loadVideos(folder, opts = {}) {
+  const channelId = opts.channelId || null;
+  const q = opts.q || null;
+  const seq = ++_loadSeq;
+  _currentQuery.folder = folder;
+  _currentQuery.channelId = channelId;
+  _currentQuery.q = q;
+
+  const resp = await fetch(buildVideosUrl({ folder, channelId, q }));
+  if (!resp.ok) throw new Error(`Failed to load videos (${resp.status})`);
+  const data = await resp.json();
+  if (seq !== _loadSeq) return; // a newer request has since fired
+
+  videos.set(data.videos || []);
+  hasMoreVideos.set(!!data.hasMore);
+}
+
+export async function loadMoreVideos() {
+  if (get(loadingMore) || !get(hasMoreVideos)) return;
+  const current = get(videos);
+  if (!current.length) return;
+  const before = current[current.length - 1].published;
+  loadingMore.set(true);
+  const seq = _loadSeq;
+  try {
+    const resp = await fetch(buildVideosUrl({ ..._currentQuery, before }));
+    if (!resp.ok) throw new Error(`Failed to load more (${resp.status})`);
+    const data = await resp.json();
+    // Abandon the page if the user has changed filters in the meantime.
+    if (seq !== _loadSeq) return;
+    videos.update((v) => [...v, ...(data.videos || [])]);
+    hasMoreVideos.set(!!data.hasMore);
+  } finally {
+    loadingMore.set(false);
+  }
 }
 
 // --- Folder CRUD ---
@@ -177,7 +227,10 @@ export async function refreshFolder(folder) {
       }
     }
 
-    await loadVideos(folder);
+    await loadVideos(folder, {
+      channelId: get(activeChannelId) || null,
+      q: get(searchQuery) || null,
+    });
     return summary;
   } catch (err) {
     const msg = (err?.message || "").trim() || "Something went wrong";

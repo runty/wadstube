@@ -6,7 +6,7 @@
   import FolderChannels from "./lib/FolderChannels.svelte";
   import Toast from "./lib/Toast.svelte";
   import RefreshProgress from "./lib/RefreshProgress.svelte";
-  import { loadFolders, loadVideos, sidebarOpen, showChannelsFor, error } from "./stores/feed.js";
+  import { loadFolders, sidebarOpen, showChannelsFor, error } from "./stores/feed.js";
 
   onMount(async () => {
     try {

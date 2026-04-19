@@ -141,33 +141,51 @@ class Db {
   // --- reads ---
 
   getVideosForChannels(channelIds) {
-    if (!channelIds.length) return [];
-    const placeholders = channelIds.map(() => "?").join(",");
-    const rows = this.db
-      .prepare(
-        `SELECT v.video_id, v.channel_id, v.title, v.description,
-                v.thumbnail, v.published, c.title AS channel
-         FROM videos v
-         LEFT JOIN channels c ON c.id = v.channel_id
-         WHERE v.is_short = 0 AND v.channel_id IN (${placeholders})
-         ORDER BY v.published DESC`,
-      )
-      .all(...channelIds);
-    return rows.map(shape);
+    return this.queryVideos({ channelIds });
   }
 
   getAllVideos() {
-    const rows = this.db
-      .prepare(
-        `SELECT v.video_id, v.channel_id, v.title, v.description,
-                v.thumbnail, v.published, c.title AS channel
-         FROM videos v
-         LEFT JOIN channels c ON c.id = v.channel_id
-         WHERE v.is_short = 0
-         ORDER BY v.published DESC`,
-      )
-      .all();
-    return rows.map(shape);
+    return this.queryVideos({});
+  }
+
+  // Unified video query with optional channel scope, single-channel filter,
+  // full-text-ish search, keyset pagination (before = ISO timestamp, older
+  // than which we want the next page), and a hard limit.
+  queryVideos({ channelIds, channelId, q, before, limit } = {}) {
+    const wheres = ["v.is_short = 0"];
+    const params = [];
+
+    if (Array.isArray(channelIds) && channelIds.length) {
+      wheres.push(`v.channel_id IN (${channelIds.map(() => "?").join(",")})`);
+      params.push(...channelIds);
+    }
+    if (channelId) {
+      wheres.push("v.channel_id = ?");
+      params.push(channelId);
+    }
+    if (q && q.trim()) {
+      const like = `%${q.trim()}%`;
+      wheres.push("(v.title LIKE ? OR v.description LIKE ? OR c.title LIKE ?)");
+      params.push(like, like, like);
+    }
+    if (before) {
+      wheres.push("v.published < ?");
+      params.push(before);
+    }
+
+    const capped = Math.min(Math.max(parseInt(limit, 10) || 200, 1), 500);
+
+    const sql =
+      `SELECT v.video_id, v.channel_id, v.title, v.description,
+              v.thumbnail, v.published, c.title AS channel
+       FROM videos v
+       LEFT JOIN channels c ON c.id = v.channel_id
+       WHERE ${wheres.join(" AND ")}
+       ORDER BY v.published DESC
+       LIMIT ?`;
+    params.push(capped);
+
+    return this.db.prepare(sql).all(...params).map(shape);
   }
 
   getChannelNames() {

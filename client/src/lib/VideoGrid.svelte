@@ -1,21 +1,78 @@
 <script>
+  import { onDestroy } from "svelte";
   import VideoCard from "./VideoCard.svelte";
-  import { videos, refreshing, searchQuery, activeChannelId } from "../stores/feed.js";
+  import {
+    videos,
+    refreshing,
+    searchQuery,
+    activeChannelId,
+    activeFolder,
+    hasMoreVideos,
+    loadingMore,
+    loadVideos,
+    loadMoreVideos,
+    error,
+  } from "../stores/feed.js";
 
   const emptyImage = "/wads.png";
+  const DEBOUNCE_MS = 250;
 
-  $: byChannel = $activeChannelId
-    ? $videos.filter((v) => v.channel_id === $activeChannelId)
-    : $videos;
+  let debounceTimer;
+  let prevFolder;
+  let prevChannel;
+  let prevQuery;
+  let initialized = false;
 
-  $: filtered = $searchQuery
-    ? byChannel.filter((v) => {
-        const q = $searchQuery.toLowerCase();
-        return v.title?.toLowerCase().includes(q) ||
-          v.channel?.toLowerCase().includes(q) ||
-          v.description?.toLowerCase().includes(q);
-      })
-    : byChannel;
+  function runLoad() {
+    loadVideos($activeFolder, {
+      channelId: $activeChannelId || null,
+      q: $searchQuery || null,
+    }).catch((err) => {
+      error.set(err?.message || "Failed to load videos");
+    });
+  }
+
+  $: {
+    // Re-run whenever any of the three filter stores change. Search
+    // changes are debounced; folder/channel changes fire immediately.
+    const folderChanged = initialized && $activeFolder !== prevFolder;
+    const channelChanged = initialized && $activeChannelId !== prevChannel;
+    const queryChanged = initialized && $searchQuery !== prevQuery;
+
+    if (!initialized) {
+      initialized = true;
+    } else if (folderChanged || channelChanged || queryChanged) {
+      clearTimeout(debounceTimer);
+      const debounce = queryChanged && !folderChanged && !channelChanged;
+      if (debounce) {
+        debounceTimer = setTimeout(runLoad, DEBOUNCE_MS);
+      } else {
+        runLoad();
+      }
+    }
+
+    prevFolder = $activeFolder;
+    prevChannel = $activeChannelId;
+    prevQuery = $searchQuery;
+  }
+
+  onDestroy(() => clearTimeout(debounceTimer));
+
+  // Infinite scroll: observe a sentinel at the bottom of the grid.
+  function observeSentinel(node) {
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && $hasMoreVideos && !$loadingMore) {
+          loadMoreVideos().catch((err) => {
+            error.set(err?.message || "Failed to load more videos");
+          });
+        }
+      },
+      { rootMargin: "600px 0px" },
+    );
+    obs.observe(node);
+    return { destroy: () => obs.disconnect() };
+  }
 </script>
 
 <div class="grid-wrapper">
@@ -23,21 +80,31 @@
     <div class="loading">Refreshing...</div>
   {/if}
 
-  {#if filtered.length === 0 && !$refreshing}
+  {#if $videos.length === 0 && !$refreshing}
     <div class="empty">
-      {#if $videos.length === 0}
+      {#if !$activeFolder}
         <img src={emptyImage} alt="" class="empty-img" />
         <p>Select a folder to view videos.</p>
-      {:else}
+      {:else if $searchQuery}
         <p>No videos match your search.</p>
+      {:else}
+        <p>No videos yet — click Refresh to fetch.</p>
       {/if}
     </div>
   {:else}
     <div class="grid">
-      {#each filtered as video (video.video_id)}
+      {#each $videos as video (video.video_id)}
         <VideoCard {video} />
       {/each}
     </div>
+
+    {#if $hasMoreVideos}
+      <div class="sentinel" use:observeSentinel>
+        {#if $loadingMore}
+          Loading more…
+        {/if}
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -72,5 +139,15 @@
     height: auto;
     margin: 0 auto 16px;
     opacity: 0.85;
+  }
+  .sentinel {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.85rem;
+    margin-top: 16px;
   }
 </style>

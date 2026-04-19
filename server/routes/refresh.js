@@ -75,9 +75,9 @@ module.exports = function (appState) {
           `${summary.new_videos} new videos, ${summary.errors} errors`,
       );
       const stats = appState.db.getStats();
-      const videos = meta.folder
-        ? appState.db.getVideosForChannels(meta.channelIdsForFolder || channelIds)
-        : undefined;
+      // Client reloads the feed via the paginated /api/videos endpoint
+      // after the stream ends, so we don't ship the (potentially huge)
+      // video list back here anymore.
       writeEvent(res, {
         type: "summary",
         refreshed: summary.updated,
@@ -85,7 +85,6 @@ module.exports = function (appState) {
         errors: summary.errors,
         total_channels: stats.channelCount,
         total_videos: stats.videoCount,
-        videos,
       });
     } catch (err) {
       console.error(`Refresh ${meta.label || "all"} error:`, err);

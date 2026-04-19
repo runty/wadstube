@@ -4,7 +4,6 @@
     activeFolder,
     activeChannelId,
     sidebarOpen,
-    loadVideos,
     loadChannels,
     createFolderApi,
     renameFolderApi,
@@ -34,7 +33,6 @@
   function selectFolder(name) {
     activeFolder.set(name);
     activeChannelId.set(null);
-    loadVideos(name);
     if (window.innerWidth <= 900) {
       sidebarOpen.set(false);
     }
@@ -43,7 +41,6 @@
   function selectChannel(folderName, channel) {
     activeChannelId.update((current) => current === channel.id ? null : channel.id);
     activeFolder.set(folderName);
-    loadVideos(folderName);
     if (window.innerWidth <= 900) {
       sidebarOpen.set(false);
     }
@@ -213,7 +210,6 @@
           // Pick channel at the same index, or the last one if we ran off the end
           const next = after[Math.min(deletedIdx, after.length - 1)];
           activeChannelId.set(next.id);
-          loadVideos(folderName);
         }
       }
     } catch (err) {
