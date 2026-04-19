@@ -1,5 +1,6 @@
 .env
 .venv/
+.claude/
 __pycache__/
 node_modules/
 client/dist/
@@ -9,6 +10,10 @@ data/
 feed.html
 test_feed.html
 cache.json
+cache.json.migrated
+*.db
+*.db-shm
+*.db-wal
 fetch_videos.py
 requirements.txt
 com.tube.fetch-videos.plist

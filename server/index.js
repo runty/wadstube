@@ -3,14 +3,20 @@ require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") }
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
-const { loadData, getFolderTreeSummary, syncChannelNames, saveData } = require("./lib/data");
+const { loadData, getFolderTreeSummary, syncChannelNames, saveData, collectAllChannelIds } =
+  require("./lib/data");
 const { resolveUrl } = require("./lib/youtube");
-const Cache = require("./lib/cache");
+const Db = require("./lib/db");
+const { migrateCacheJsonIfNeeded } = require("./lib/migrate-cache");
 
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
-const CACHE_FILE = path.join(DATA_DIR, "cache.json");
-const MAX_VIDEOS = parseInt(process.env.MAX_VIDEOS || "15", 10);
+const DB_FILE = path.join(DATA_DIR, "wadstube.db");
+const MAX_VIDEOS = parseInt(process.env.MAX_VIDEOS || "50", 10);
+const REFRESH_INTERVAL_MINUTES = parseInt(
+  process.env.REFRESH_INTERVAL_MINUTES || "30",
+  10,
+);
 const API_KEY = process.env.YOUTUBE_API_KEY;
 
 if (!API_KEY) {
@@ -18,40 +24,49 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-// Load data (auto-migrates from PocketTube format if needed)
 const data = loadData(DATA_DIR);
-const cache = new Cache(CACHE_FILE);
+const db = new Db(DB_FILE);
+migrateCacheJsonIfNeeded(db, DATA_DIR);
 
 const appState = {
   data,
   dataDir: DATA_DIR,
-  cache,
+  db,
   apiKey: API_KEY,
   maxVideos: MAX_VIDEOS,
+  refreshLock: null,
 };
 
-// Sync channel names from cache into tube.json (no API calls)
-const initialNameUpdates = syncChannelNames(data, cache.getChannelNames());
+// Sync channel names from DB into tube.json (no network calls)
+const initialNameUpdates = syncChannelNames(data, db.getChannelNames());
 if (initialNameUpdates > 0) {
   saveData(DATA_DIR, data);
-  console.log(`Synced ${initialNameUpdates} channel name(s) from cache`);
+  console.log(`Synced ${initialNameUpdates} channel name(s) from db`);
 }
 
 const summary = getFolderTreeSummary(data);
 console.log(`${summary.length} top-level folders`);
-const stats = cache.getStats();
-console.log(`Cache: ${stats.channelCount} channels, ${stats.videoCount} videos`);
+const stats = db.getStats();
+console.log(`DB: ${stats.channelCount} channels, ${stats.videoCount} videos`);
 
 // Nightly backups (GFS retention: 4 daily + 4 weekly + 4 monthly)
 const { scheduleBackups } = require("./lib/backup");
-scheduleBackups(DATA_DIR);
+scheduleBackups(DATA_DIR, db);
+
+// Background RSS poller (opt-out with REFRESH_INTERVAL_MINUTES=0)
+const { startPoller } = require("./lib/poller");
+startPoller(appState, {
+  intervalMinutes: REFRESH_INTERVAL_MINUTES,
+  collectAllChannelIds,
+  syncChannelNames,
+  saveData,
+});
 
 // Express app
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// API routes
 app.use("/api/folders", require("./routes/folders")(appState));
 app.use("/api/videos", require("./routes/videos")(appState));
 app.use("/api/refresh", require("./routes/refresh")(appState));
@@ -72,19 +87,15 @@ app.post("/api/restore", (req, res) => {
       return res.status(400).json({ error: "Invalid backup file. Must be a tube.json with version and folders." });
     }
 
-    // Save backup of current data before overwriting
-    const { saveData } = require("./lib/data");
     const fs = require("fs");
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     const backupPath = path.join(DATA_DIR, `tube-pre-restore-${timestamp}.json`);
     fs.writeFileSync(backupPath, JSON.stringify(appState.data, null, 2), "utf-8");
     console.log(`Saved pre-restore backup to ${backupPath}`);
 
-    // Replace data
     appState.data = uploaded;
     saveData(DATA_DIR, appState.data);
 
-    const { getFolderTreeSummary } = require("./lib/data");
     res.json({ ok: true, folders: getFolderTreeSummary(appState.data) });
   } catch (err) {
     console.error("Restore error:", err);

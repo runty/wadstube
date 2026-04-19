@@ -52,13 +52,13 @@ function listBackups(dataDir) {
     .reverse();
 }
 
-function createBackup(dataDir) {
+function createBackup(dataDir, db) {
   const date = localDateString();
   const root = ensureBackupsDir(dataDir);
   const destDir = path.join(root, date);
   if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
 
-  const files = ["tube.json", "cache.json"];
+  const files = ["tube.json"];
   const copied = [];
   for (const name of files) {
     const src = path.join(dataDir, name);
@@ -66,6 +66,17 @@ function createBackup(dataDir) {
     atomicCopy(src, path.join(destDir, name));
     copied.push(name);
   }
+
+  if (db) {
+    try {
+      const dbDest = path.join(destDir, "wadstube.db");
+      db.vacuumInto(dbDest);
+      copied.push("wadstube.db");
+    } catch (err) {
+      console.error(`[backup] db snapshot failed: ${err.message}`);
+    }
+  }
+
   return { dir: destDir, files: copied };
 }
 
@@ -123,9 +134,9 @@ function applyRetention(dataDir) {
   return { kept, deleted, daily, weekly, monthly };
 }
 
-function runBackupNow(dataDir) {
+function runBackupNow(dataDir, db) {
   try {
-    const { dir, files } = createBackup(dataDir);
+    const { dir, files } = createBackup(dataDir, db);
     const { kept, deleted } = applyRetention(dataDir);
     console.log(
       `[backup] wrote ${path.basename(dir)} (${files.join(", ") || "nothing"}); ` +
@@ -145,11 +156,11 @@ function msUntilNext1am(now = new Date()) {
 }
 
 // Kick off a backup if the most recent one is older than 25 hours (or none exists).
-function catchUpIfStale(dataDir) {
+function catchUpIfStale(dataDir, db) {
   const names = listBackups(dataDir);
   if (names.length === 0) {
     console.log("[backup] no prior backup found, creating initial backup");
-    runBackupNow(dataDir);
+    runBackupNow(dataDir, db);
     return;
   }
   const latest = names[0]; // newest first
@@ -158,20 +169,20 @@ function catchUpIfStale(dataDir) {
   const ageHours = (Date.now() - latestDate.getTime()) / 3600000;
   if (ageHours > 25) {
     console.log(`[backup] most recent backup is ${ageHours.toFixed(0)}h old, creating catch-up backup`);
-    runBackupNow(dataDir);
+    runBackupNow(dataDir, db);
   }
 }
 
-function scheduleBackups(dataDir) {
+function scheduleBackups(dataDir, db) {
   ensureBackupsDir(dataDir);
-  catchUpIfStale(dataDir);
+  catchUpIfStale(dataDir, db);
 
   function scheduleNext() {
     const delay = msUntilNext1am();
     const when = new Date(Date.now() + delay);
     console.log(`[backup] next run at ${when.toString()} (in ${(delay / 3600000).toFixed(1)}h)`);
     setTimeout(() => {
-      runBackupNow(dataDir);
+      runBackupNow(dataDir, db);
       scheduleNext(); // recompute next 1am to be DST-safe
     }, delay);
   }

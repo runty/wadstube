@@ -2,15 +2,35 @@ const express = require("express");
 const router = express.Router();
 
 module.exports = function (appState) {
-  const { getChannelsForFolder, collectAllChannelIds, syncChannelNames, saveData } = require("../lib/data");
-  const { fetchChannels } = require("../lib/youtube");
+  const { getChannelsForFolder, collectAllChannelIds, syncChannelNames, saveData } =
+    require("../lib/data");
+  const { refreshChannels } = require("../lib/refresh");
 
-  function syncNamesFromCache() {
-    const names = appState.cache.getChannelNames();
+  function syncNamesFromDb() {
+    const names = appState.db.getChannelNames();
     const updated = syncChannelNames(appState.data, names);
     if (updated > 0) {
       saveData(appState.dataDir, appState.data);
       console.log(`Updated ${updated} channel name(s) in tube.json`);
+    }
+  }
+
+  async function runRefresh(channelIds) {
+    // Serialize against the background poller so we don't race.
+    if (appState.refreshLock) {
+      await appState.refreshLock;
+    }
+    let release;
+    appState.refreshLock = new Promise((res) => { release = res; });
+    try {
+      const summary = await refreshChannels(appState.db, channelIds, {
+        keep: appState.maxVideos,
+      });
+      syncNamesFromDb();
+      return summary;
+    } finally {
+      release();
+      appState.refreshLock = null;
     }
   }
 
@@ -24,13 +44,12 @@ module.exports = function (appState) {
       const unique = [...new Set(allChannels)];
       console.log(`Refreshing all: ${unique.length} channels`);
 
-      const channelVideos = await fetchChannels(appState.apiKey, unique, appState.maxVideos);
-      appState.cache.updateChannels(channelVideos);
-      syncNamesFromCache();
-
-      const stats = appState.cache.getStats();
+      const summary = await runRefresh(unique);
+      const stats = appState.db.getStats();
       res.json({
-        refreshed: Object.keys(channelVideos).length,
+        refreshed: summary.updated,
+        new_videos: summary.new_videos,
+        errors: summary.errors,
         total_channels: stats.channelCount,
         total_videos: stats.videoCount,
       });
@@ -53,12 +72,14 @@ module.exports = function (appState) {
       const unique = [...new Set(channelIds)];
       console.log(`Refreshing folder "${folder}": ${unique.length} channels`);
 
-      const channelVideos = await fetchChannels(appState.apiKey, unique, appState.maxVideos);
-      appState.cache.updateChannels(channelVideos);
-      syncNamesFromCache();
-
-      const videos = appState.cache.getVideosForChannels(channelIds);
-      res.json({ refreshed: Object.keys(channelVideos).length, videos });
+      const summary = await runRefresh(unique);
+      const videos = appState.db.getVideosForChannels(channelIds);
+      res.json({
+        refreshed: summary.updated,
+        new_videos: summary.new_videos,
+        errors: summary.errors,
+        videos,
+      });
     } catch (err) {
       console.error(`Refresh ${req.params.folder} error:`, err);
       res.status(500).json({ error: err.message });

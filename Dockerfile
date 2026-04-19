@@ -14,7 +14,11 @@ RUN apk add --no-cache wget tzdata
 ENV TZ=America/Los_Angeles
 
 COPY server/package*.json ./server/
-RUN cd server && npm ci --omit=dev
+# better-sqlite3 ships prebuilt binaries for linux-musl; fall back to build
+# tools if none match this Node ABI.
+RUN apk add --no-cache --virtual .build-deps python3 make g++ \
+  && cd server && npm ci --omit=dev \
+  && apk del .build-deps
 
 COPY server/ ./server/
 COPY --from=client-build /app/client/dist ./client/dist

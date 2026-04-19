@@ -8,7 +8,7 @@ module.exports = function (appState) {
     const folder = req.query.folder;
 
     if (!folder || folder === "__all__") {
-      return res.json(appState.cache.getAllVideos());
+      return res.json(appState.db.getAllVideos());
     }
 
     const channelIds = getChannelsForFolder(appState.data, folder);
@@ -16,7 +16,7 @@ module.exports = function (appState) {
       return res.json([]);
     }
 
-    res.json(appState.cache.getVideosForChannels(channelIds));
+    res.json(appState.db.getVideosForChannels(channelIds));
   });
 
   return router;
