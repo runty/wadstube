@@ -10,8 +10,12 @@ services:
       - DATA_DIR=/app/data
       - PORT=3000
       - MAX_VIDEOS=${MAX_VIDEOS:-50}
-      - REFRESH_INTERVAL_MINUTES=${REFRESH_INTERVAL_MINUTES:-30}
+      # Poller disabled 2026-04-19 while YouTube's RSS rate limit cools off
+      # — re-enable by unsetting or bumping back to 30.
+      - REFRESH_INTERVAL_MINUTES=${REFRESH_INTERVAL_MINUTES:-0}
       - REFRESH_MODE=${REFRESH_MODE:-rss}
+      - REFRESH_MODE_MANUAL=${REFRESH_MODE_MANUAL:-api}
+      - REFRESH_MODE_POLLER=${REFRESH_MODE_POLLER:-rss}
       - TZ=${TZ:-America/Los_Angeles}
     restart: unless-stopped
     mem_limit: 512m

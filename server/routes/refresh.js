@@ -24,7 +24,7 @@ module.exports = function (appState) {
         channelIds,
         {
           keep: appState.maxVideos,
-          mode: appState.refreshMode,
+          mode: appState.manualMode,
           apiKey: appState.apiKey,
         },
         onEvent,

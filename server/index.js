@@ -18,11 +18,18 @@ const REFRESH_INTERVAL_MINUTES = parseInt(
   10,
 );
 const REFRESH_MODE = (process.env.REFRESH_MODE || "rss").toLowerCase();
+const REFRESH_MODE_MANUAL = (process.env.REFRESH_MODE_MANUAL || REFRESH_MODE).toLowerCase();
+const REFRESH_MODE_POLLER = (process.env.REFRESH_MODE_POLLER || REFRESH_MODE).toLowerCase();
 const API_KEY = process.env.YOUTUBE_API_KEY;
 
-if (!["rss", "api"].includes(REFRESH_MODE)) {
-  console.error(`Invalid REFRESH_MODE "${REFRESH_MODE}" — use "rss" or "api"`);
-  process.exit(1);
+for (const [name, val] of [
+  ["REFRESH_MODE_MANUAL", REFRESH_MODE_MANUAL],
+  ["REFRESH_MODE_POLLER", REFRESH_MODE_POLLER],
+]) {
+  if (!["rss", "api"].includes(val)) {
+    console.error(`Invalid ${name} "${val}" — use "rss" or "api"`);
+    process.exit(1);
+  }
 }
 
 if (!API_KEY) {
@@ -40,11 +47,12 @@ const appState = {
   db,
   apiKey: API_KEY,
   maxVideos: MAX_VIDEOS,
-  refreshMode: REFRESH_MODE,
+  manualMode: REFRESH_MODE_MANUAL,
+  pollerMode: REFRESH_MODE_POLLER,
   refreshLock: null,
 };
 
-console.log(`Refresh mode: ${REFRESH_MODE}`);
+console.log(`Refresh mode — manual: ${REFRESH_MODE_MANUAL}, poller: ${REFRESH_MODE_POLLER}`);
 
 // Sync channel names from DB into tube.json (no network calls)
 const initialNameUpdates = syncChannelNames(data, db.getChannelNames());
