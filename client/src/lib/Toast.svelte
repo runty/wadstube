@@ -10,7 +10,10 @@
 </script>
 
 {#if $toast}
-  <div class="toast" class:success={$toast.type === "success"} class:error={$toast.type === "error"}>
+  <div class="toast"
+       class:success={$toast.type === "success"}
+       class:error={$toast.type === "error"}
+       class:info={$toast.type === "info"}>
     {$toast.message}
   </div>
 {/if}
@@ -35,6 +38,10 @@
   }
   .error {
     background: #cc3333;
+    color: #fff;
+  }
+  .info {
+    background: #444;
     color: #fff;
   }
   @keyframes slideUp {

@@ -10,7 +10,14 @@
 
   async function handleRefresh() {
     try {
-      await refreshFolder($activeFolder);
+      const result = await refreshFolder($activeFolder);
+      const n = result?.new_videos ?? 0;
+      const errs = result?.errors ?? 0;
+      const msg = n === 0
+        ? "No new videos"
+        : `Added ${n} new video${n === 1 ? "" : "s"}`;
+      const suffix = errs > 0 ? ` (${errs} channel${errs === 1 ? "" : "s"} errored)` : "";
+      toast.set({ message: msg + suffix, type: n > 0 ? "success" : "info" });
     } catch {
       // error is already set in the store
     }
