@@ -9,7 +9,7 @@ Self-hosted YouTube subscription manager and video feed viewer. Node.js/Express 
 - **Backend:** Node.js + Express (`server/`)
 - **Frontend:** Svelte built with Vite (`client/`), served as static files by Express
 - **Data:** In the `data/` volume — `tube.json` (folders/channels) and `wadstube.db` (SQLite: channels + videos)
-- **Refresh:** RSS feeds (`/feeds/videos.xml?channel_id=UC...`) with `If-None-Match`/`If-Modified-Since`; background poller + manual refresh button both go through the same path
+- **Refresh:** RSS feeds (`/feeds/videos.xml?channel_id=UC...`) with `If-None-Match`/`If-Modified-Since`; background poller + manual refresh button both go through the same path and serialize via a single synchronous `tryAcquireLock`/`releaseLock` pair in `server/lib/refresh.js`. Nightly backup waits for any in-flight refresh (`waitForRefreshIdle`) before `VACUUM INTO` so snapshots never race writes.
 - **Docker:** Multi-stage build (Alpine), health check, 512MB mem limit, `TZ=America/Los_Angeles` baked in so nightly backups and local-day math line up
 
 ## Key files
@@ -74,10 +74,12 @@ ssh shrimp 'bash ~/wadstube-redeploy.sh'
 
 ## Data format
 
-`tube.json` — folders as ordered array, each with id, name, channels (id/name/addedAt), children:
+`tube.json` — folders as ordered array, each with id, name, channels (id/name/addedAt; optional `userRenamed: true` set when the user renames via the sidebar so the poller's name-sync doesn't revert it), children:
 ```json
 { "version": 1, "folders": [{ "id": "...", "name": "...", "channels": [...], "children": [...] }] }
 ```
+
+`tube.json` is normalized on every load and on `/api/restore` upload: missing `channels`/`children` arrays default to `[]`, folder nesting is capped at depth 4, channel IDs must match `^UC[A-Za-z0-9_-]{22}$`, and prototype keys are stripped.
 
 `wadstube.db` — SQLite (WAL mode), two tables:
 - `channels(id PK, title, last_checked_at, last_etag, last_modified)`

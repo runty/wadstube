@@ -10,8 +10,8 @@ YouTube's native subscription feed is a single unsorted stream. PocketTube (brow
 
 - **Folder-organized feed** — sidebar with expandable folder/subfolder hierarchy
 - **Expandable channels in sidebar** — click the chevron next to a folder to see channels inline; click a channel to filter videos to just that channel
-- **Channel management** — right-click/long-press a channel in the sidebar to rename, move to another folder, or delete it
-- **RSS-based refresh** — free, no API quota; also switchable to the YouTube Data API mode for refreshes when RSS is rate-limited
+- **Channel management** — right-click/long-press a channel in the sidebar to rename, move to another folder, or delete it. A rename sticks: the background poller won't revert your chosen name to YouTube's.
+- **RSS-based refresh** — free, no API quota; also switchable to the YouTube Data API mode for refreshes when RSS is rate-limited. Manual clicks and the background poller never run at the same time.
 - **Separate refresh modes for manual and background** — e.g. API for your manual clicks (fast, predictable) and RSS for the background poller (free, slower)
 - **Background polling** — configurable cadence (default 30 min); set `0` to disable
 - **Live progress UI** — a per-channel overlay shows each channel as it's fetched, with a `done/total` counter, running "new videos" tally, and error count
@@ -20,7 +20,7 @@ YouTube's native subscription feed is a single unsorted stream. PocketTube (brow
 - **Drag-and-drop** — drag any YouTube URL (video, channel, @handle, shorts, live) onto a folder to add that channel
 - **Paste to add** — paste URLs in the channel list panel (works on mobile)
 - **URL resolution** — video URLs are auto-resolved to the channel via YouTube API (1 unit)
-- **Backup/restore** — download your folder/channel data as JSON, restore from a backup; nightly backups include a consistent SQLite snapshot
+- **Backup/restore** — download your folder/channel data as JSON, restore from a backup (up to 5 MB; tree is validated and depth-capped on upload); nightly backups include a consistent SQLite snapshot taken after any in-flight refresh finishes
 - **Right-click to copy** — right-click any video card to copy its link
 - **Mobile-friendly** — long-press for context menus, iOS home screen icon, responsive layout
 - **System light/dark mode** — auto-switches with OS theme
@@ -98,7 +98,8 @@ Two files in `data/`:
       "id": "cooking",
       "name": "Cooking",
       "channels": [
-        { "id": "UCxAS...", "name": "America's Test Kitchen", "addedAt": "2026-04-15T..." }
+        { "id": "UCxAS...", "name": "America's Test Kitchen", "addedAt": "2026-04-15T..." },
+        { "id": "UCzZN...", "name": "My Favorite Chef", "addedAt": "...", "userRenamed": true }
       ],
       "children": [
         { "id": "baking", "name": "Baking", "channels": [...], "children": [] }
@@ -107,6 +108,8 @@ Two files in `data/`:
   ]
 }
 ```
+
+`userRenamed: true` is set automatically when you rename a channel from the sidebar; it tells the background poller to leave that name alone. The tree is normalized on every load and on restore — missing `channels`/`children` arrays are coerced to `[]`, folder nesting is capped at depth 4, channel IDs must match `^UC[A-Za-z0-9_-]{22}$`, and prototype-pollution keys are stripped.
 
 **`wadstube.db`** — SQLite, WAL mode. Two tables:
 - `channels(id PK, title, last_checked_at, last_etag, last_modified)` — RSS-conditional-request hints + the last-known title
@@ -290,6 +293,8 @@ The app runs at `http://localhost:3000`.
 - **Create:** "+ New Folder" at the bottom of the sidebar.
 - **Rename/Delete:** right-click (or long-press) a folder.
 - **View Channels:** right-click → "View Channels" opens the modal.
+
+Deleting a folder or channel also purges the corresponding rows from `wadstube.db` so stale subscriptions don't keep appearing in the feed.
 
 ### Viewing & Filtering by Channel
 
