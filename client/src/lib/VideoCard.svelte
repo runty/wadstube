@@ -44,13 +44,19 @@
 <style>
   .card {
     background: var(--card-bg);
+    border: 1px solid var(--border);
     border-radius: 8px;
     overflow: hidden;
-    transition: transform 0.15s;
+    box-shadow: var(--shadow);
+    transition:
+      transform 0.15s,
+      border-color 0.15s,
+      box-shadow 0.15s;
     cursor: pointer;
   }
   .card:hover {
     transform: translateY(-2px);
+    border-color: var(--border-strong);
   }
   .card img {
     width: 100%;
@@ -64,6 +70,7 @@
   .card-title {
     font-size: 1rem;
     font-weight: 600;
+    color: var(--heading);
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -97,7 +104,7 @@
     font-family: inherit;
   }
   .card-channel:hover {
-    color: var(--accent);
+    color: var(--heading);
     text-decoration: underline;
   }
 </style>

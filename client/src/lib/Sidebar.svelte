@@ -532,17 +532,18 @@
 <style>
   aside {
     position: fixed;
-    top: 49px;
+    top: var(--header-height);
     left: 0;
     bottom: 0;
     width: 280px;
-    background: var(--sidebar-bg);
+    background: color-mix(in srgb, var(--sidebar-bg) 96%, transparent);
+    backdrop-filter: blur(18px);
     border-right: 1px solid var(--border);
     overflow-y: auto;
     transform: translateX(-100%);
     transition: transform 0.2s ease;
     z-index: 150;
-    padding: 8px 0;
+    padding: 10px 0;
     display: flex;
     flex-direction: column;
   }
@@ -564,15 +565,17 @@
     display: flex;
     align-items: stretch;
     border-left: 3px solid transparent;
-    transition: background 0.15s;
+    transition:
+      background 0.15s,
+      border-color 0.15s;
   }
   .folder-row.drag-over {
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    background: var(--hover-bg);
     border-left-color: var(--accent);
   }
 
   .chevron-btn {
-    background: none;
+    background: transparent;
     border: none;
     padding: 0 4px 0 8px;
     cursor: pointer;
@@ -633,10 +636,10 @@
     cursor: pointer;
     min-width: 0;
   }
-  .folder-item:hover { background: var(--card-bg); }
+  .folder-item:hover { background: var(--hover-bg); }
   .folder-item.active {
     color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    background: var(--active-bg);
   }
   .folder-row:has(.folder-item.active) { border-left-color: var(--accent); }
   .folder-item.parent { font-weight: 600; }
@@ -689,12 +692,12 @@
     border-left: 3px solid transparent;
   }
   .channel-item:hover {
-    background: var(--card-bg);
+    background: var(--hover-bg);
     color: var(--text);
   }
   .channel-item.active {
     color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    background: var(--active-bg);
     border-left-color: var(--accent);
     font-weight: 600;
   }
@@ -728,8 +731,8 @@
     font-size: 0.88rem;
     cursor: pointer;
   }
-  .context-menu button:hover { background: var(--bg); }
-  .context-menu button.danger { color: var(--accent); }
+  .context-menu button:hover { background: var(--button); }
+  .context-menu button.danger { color: var(--danger); }
 
   /* Move submenu — centered overlay, responsive */
   .move-menu {
@@ -740,7 +743,7 @@
     z-index: 300;
     background: var(--card-bg);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 12px 0 0;
     width: 90%;
     max-width: 340px;
@@ -772,9 +775,9 @@
     font-size: 0.88rem;
     cursor: pointer;
   }
-  .move-menu-list button:hover { background: var(--bg); }
+  .move-menu-list button:hover { background: var(--button); }
   .move-cancel {
-    background: var(--bg);
+    background: var(--bg-soft);
     border: none;
     border-top: 1px solid var(--border);
     color: var(--text-muted);
@@ -791,11 +794,11 @@
   .rename-input.sub { padding-left: 56px; }
   .rename-input input {
     width: 100%;
-    background: var(--bg);
+    background: var(--field);
     border: 1px solid var(--accent);
     color: var(--text);
     padding: 6px 10px;
-    border-radius: 4px;
+    border-radius: 7px;
     font-size: 0.9rem;
     outline: none;
   }
@@ -808,36 +811,36 @@
   }
   .new-folder-btn {
     width: 100%;
-    background: none;
+    background: var(--button);
     border: 1px dashed var(--border);
     color: var(--text-muted);
     padding: 6px;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 0.82rem;
   }
-  .new-folder-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .new-folder-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--hover-bg); }
   .new-folder-input {
     display: flex;
     gap: 6px;
   }
   .new-folder-input input {
     flex: 1;
-    background: var(--bg);
+    background: var(--field);
     border: 1px solid var(--border);
     color: var(--text);
     padding: 4px 8px;
-    border-radius: 4px;
+    border-radius: 7px;
     font-size: 0.82rem;
     outline: none;
   }
   .new-folder-input input:focus { border-color: var(--accent); }
   .confirm-btn {
     background: var(--accent);
-    color: #fff;
+    color: var(--ink);
     border: none;
     padding: 4px 10px;
-    border-radius: 4px;
+    border-radius: 7px;
     cursor: pointer;
     font-size: 0.9rem;
   }

@@ -1,5 +1,6 @@
 <script>
   import { activeFolder, refreshFolder, refreshing, error, sidebarOpen, searchQuery, folders, toast } from "../stores/feed.js";
+  import { setThemeMode, themeMode } from "../stores/theme.js";
 
   let fileInput;
   let showGearMenu = false;
@@ -71,7 +72,7 @@
 <svelte:window on:click={closeGearMenu} />
 
 <header>
-  <button class="menu-btn" on:click={toggleSidebar} title="Toggle folders">
+  <button class="menu-btn" type="button" on:click={toggleSidebar} title="Toggle folders">
     &#9776;
   </button>
   <div class="brand-wrapper">
@@ -89,8 +90,8 @@
     </button>
     {#if showGearMenu}
       <div class="gear-menu title-menu" role="menu" aria-label="Settings">
-        <button on:click={handleBackup} role="menuitem">&#8615; Backup</button>
-        <button on:click={handleRestoreClick} role="menuitem">&#8613; Restore</button>
+        <button type="button" on:click={handleBackup} role="menuitem">&#8615; Backup</button>
+        <button type="button" on:click={handleRestoreClick} role="menuitem">&#8613; Restore</button>
       </div>
     {/if}
   </div>
@@ -106,13 +107,49 @@
     {/if}
   </div>
   <input type="file" accept=".json" bind:this={fileInput} on:change={handleRestoreFile} hidden />
-  <button class="refresh-btn" on:click={handleRefresh} disabled={$refreshing}>
-    {#if $refreshing}
-      <span class="spinner"></span> Refreshing...
-    {:else}
-      &#8635; Refresh
-    {/if}
-  </button>
+  <div class="header-actions">
+    <div class="wads-theme-switch" role="group" aria-label="Color theme">
+      <button
+        class:active={$themeMode === "system"}
+        type="button"
+        on:click={() => setThemeMode("system")}
+        aria-label="Follow system theme"
+        aria-pressed={$themeMode === "system"}
+        title="Follow system theme"
+      >
+        <span aria-hidden="true">◐</span>
+      </button>
+      <button
+        class:active={$themeMode === "light"}
+        type="button"
+        on:click={() => setThemeMode("light")}
+        aria-label="Use light theme"
+        aria-pressed={$themeMode === "light"}
+        title="Use light theme"
+      >
+        <span aria-hidden="true">☼</span>
+      </button>
+      <button
+        class:active={$themeMode === "dark"}
+        type="button"
+        on:click={() => setThemeMode("dark")}
+        aria-label="Use dark theme"
+        aria-pressed={$themeMode === "dark"}
+        title="Use dark theme"
+      >
+        <span aria-hidden="true">☾</span>
+      </button>
+    </div>
+    <button class="refresh-btn" type="button" on:click={handleRefresh} disabled={$refreshing}>
+      {#if $refreshing}
+        <span class="spinner" aria-hidden="true"></span>
+        <span class="refresh-label">Refreshing...</span>
+      {:else}
+        <span class="refresh-icon" aria-hidden="true">&#8635;</span>
+        <span class="refresh-label">Refresh</span>
+      {/if}
+    </button>
+  </div>
 </header>
 
 {#if $error && String($error).trim()}
@@ -127,26 +164,37 @@
     position: sticky;
     top: 0;
     z-index: 200;
-    background: var(--bg);
+    background: color-mix(in srgb, var(--card-bg) 92%, transparent);
+    backdrop-filter: blur(18px);
     border-bottom: 1px solid var(--border);
     padding: 12px 24px;
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 14px;
   }
   .menu-btn {
-    background: none;
-    border: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 44px;
+    background: var(--button);
+    border: 1px solid var(--border);
     color: var(--text);
-    font-size: 1.4rem;
+    font-size: 1.32rem;
+    line-height: 1;
     cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: 8px;
   }
   .menu-btn:hover {
-    background: var(--card-bg);
+    border-color: var(--border-strong);
+    transform: translateY(-1px);
   }
   .brand-wrapper {
+    display: flex;
+    align-items: center;
     position: relative;
     flex: 0 0 auto;
   }
@@ -156,14 +204,15 @@
     gap: 10px;
     border: 0;
     background: transparent;
-    color: var(--text);
-    padding: 2px 4px;
+    color: var(--heading);
+    padding: 0 4px;
     border-radius: 7px;
     cursor: pointer;
     font: inherit;
+    line-height: 1;
   }
   .brand-button:hover {
-    background: var(--card-bg);
+    background: var(--hover-bg);
   }
   .brand-mark {
     width: 44px;
@@ -173,7 +222,7 @@
     justify-content: center;
     flex: 0 0 auto;
     overflow: hidden;
-    border: 1px solid var(--border);
+    border: 1px solid rgb(var(--accent-rgb) / 0.24);
     border-radius: 8px;
     background: var(--card-bg);
     box-shadow: var(--shadow);
@@ -187,20 +236,22 @@
   .brand-title {
     font-size: 1.2rem;
     font-weight: 700;
-    color: var(--text);
+    line-height: 1.1;
+    color: var(--heading);
   }
   .search-wrapper {
-    flex: 1;
+    flex: 1 1 220px;
     max-width: 400px;
     position: relative;
   }
   .search {
     width: 100%;
-    background: var(--card-bg);
+    background: var(--field);
     border: 1px solid var(--border);
     color: var(--text);
-    padding: 6px 30px 6px 12px;
-    border-radius: 6px;
+    min-height: 42px;
+    padding: 0 34px 0 12px;
+    border-radius: 8px;
     font-size: 0.85rem;
     outline: none;
     font-family: inherit;
@@ -220,7 +271,50 @@
     padding: 4px 8px;
     line-height: 1;
   }
-  .search-clear:hover { color: var(--text); }
+  .search-clear:hover { color: var(--heading); background: var(--button); }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+  .wads-theme-switch {
+    display: inline-grid;
+    grid-template-columns: repeat(3, 30px);
+    gap: 3px;
+    min-height: 38px;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-soft);
+  }
+  .wads-theme-switch button {
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--text-muted);
+    background: transparent;
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+      background 140ms ease,
+      color 140ms ease,
+      transform 140ms ease;
+  }
+  .wads-theme-switch button:hover {
+    color: var(--heading);
+    background: var(--button);
+  }
+  .wads-theme-switch button.active {
+    color: var(--ink);
+    background: var(--accent);
+  }
   .gear-menu {
     position: absolute;
     top: 100%;
@@ -228,10 +322,10 @@
     margin-top: 6px;
     background: var(--card-bg);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 4px 0;
-    min-width: 140px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    border-radius: 8px;
+    padding: 8px;
+    min-width: 230px;
+    box-shadow: var(--shadow);
     z-index: 300;
   }
   .gear-menu button {
@@ -241,12 +335,13 @@
     background: none;
     border: none;
     color: var(--text);
-    padding: 8px 16px;
+    padding: 9px 10px;
+    border-radius: 6px;
     font-size: 0.85rem;
     cursor: pointer;
   }
   .gear-menu button:hover {
-    background: var(--bg);
+    background: var(--button);
   }
   @media (max-width: 640px) {
     header {
@@ -254,9 +349,14 @@
       gap: 8px;
       flex-wrap: wrap;
     }
+    .menu-btn {
+      flex-basis: 40px;
+      width: 40px;
+      height: 40px;
+    }
     .brand-button {
       gap: 8px;
-      padding-inline: 2px;
+      padding-inline: 0;
     }
     .brand-mark {
       width: 40px;
@@ -265,35 +365,45 @@
     .brand-title {
       font-size: 0.98rem;
     }
+    .header-actions {
+      order: 3;
+      gap: 8px;
+      margin-left: auto;
+    }
     .gear-menu {
-      left: 50px;
+      position: fixed;
+      top: calc(var(--header-height) + 8px);
+      left: 12px;
+      right: 12px;
+      width: auto;
+      min-width: 0;
+      margin-top: 0;
     }
     .search-wrapper {
       order: 4;
       flex: 1 1 100%;
       max-width: none;
     }
-    .refresh-btn {
-      order: 3;
-      margin-left: auto;
-      padding: 6px 10px;
-      font-size: 0.8rem;
-    }
   }
   .refresh-btn {
     background: var(--accent);
-    color: #fff;
-    border: none;
+    color: var(--ink);
+    border: 1px solid transparent;
     padding: 6px 16px;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 0.85rem;
+    font-weight: 750;
     cursor: pointer;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
+    min-height: 38px;
+    position: relative;
   }
   .refresh-btn:hover {
-    opacity: 0.9;
+    transform: translateY(-1px);
+    box-shadow: 0 10px 28px rgb(var(--accent-rgb) / 0.2);
   }
   .refresh-btn:disabled {
     opacity: 0.6;
@@ -303,8 +413,8 @@
     display: inline-block;
     width: 14px;
     height: 14px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top-color: #fff;
+    border: 2px solid rgb(25 19 5 / 0.26);
+    border-top-color: var(--ink);
     border-radius: 50%;
     animation: spin 0.6s linear infinite;
   }
@@ -314,7 +424,7 @@
     }
   }
   .error-bar {
-    background: #cc3333;
+    background: rgb(var(--danger-rgb) / 0.92);
     color: #fff;
     padding: 10px 24px;
     display: flex;
@@ -334,5 +444,25 @@
   }
   .dismiss:hover {
     opacity: 1;
+  }
+  @media (max-width: 640px) {
+    .refresh-btn {
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      font-size: 0.8rem;
+      justify-content: center;
+    }
+    .refresh-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
   }
 </style>

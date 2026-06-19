@@ -38,7 +38,7 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 10px 12px;
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+    box-shadow: var(--shadow);
     font-size: 0.8rem;
     z-index: 350;
   }
@@ -52,7 +52,7 @@
     margin-bottom: 6px;
   }
   .label {
-    color: var(--text);
+    color: var(--heading);
     font-weight: 600;
   }
   .count { margin-left: auto; }
@@ -60,7 +60,7 @@
     color: var(--accent);
     font-weight: 600;
   }
-  .err { color: #cc6666; }
+  .err { color: var(--danger); }
   .lanes {
     display: flex;
     flex-direction: column;

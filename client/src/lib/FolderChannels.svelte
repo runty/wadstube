@@ -135,7 +135,7 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.5);
+    background: var(--overlay);
     z-index: 250;
   }
   .panel {
@@ -148,16 +148,17 @@
     max-height: 80vh;
     background: var(--card-bg);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 8px;
     z-index: 260;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     overflow-x: hidden;
+    box-shadow: var(--shadow);
   }
   .panel.drag-over {
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent);
+    box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.45), var(--shadow);
   }
   .panel-header {
     display: flex;
@@ -168,7 +169,7 @@
   }
   .panel-header h2 {
     font-size: 1.1rem;
-    color: var(--text);
+    color: var(--heading);
     margin: 0;
   }
   .channel-count {
@@ -184,9 +185,9 @@
     cursor: pointer;
     padding: 4px 8px;
     line-height: 1;
-    border-radius: 4px;
+    border-radius: 7px;
   }
-  .close-btn:hover { color: var(--text); background: var(--bg); }
+  .close-btn:hover { color: var(--heading); background: var(--button); }
 
   .add-bar {
     display: flex;
@@ -196,11 +197,11 @@
   }
   .add-bar input {
     flex: 1;
-    background: var(--bg);
+    background: var(--field);
     border: 1px solid var(--border);
     color: var(--text);
     padding: 8px 12px;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 0.85rem;
     font-family: inherit;
     outline: none;
@@ -209,15 +210,16 @@
   .add-bar input:focus { border-color: var(--accent); }
   .add-btn {
     background: var(--accent);
-    color: #fff;
+    color: var(--ink);
     border: none;
     padding: 8px 14px;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 0.82rem;
+    font-weight: 750;
     cursor: pointer;
     white-space: nowrap;
   }
-  .add-btn:hover { opacity: 0.9; }
+  .add-btn:hover { transform: translateY(-1px); }
   .add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .panel-body {
@@ -231,7 +233,7 @@
     padding: 8px 20px;
   }
   .channel-row:hover {
-    background: var(--bg);
+    background: var(--hover-bg);
   }
   .channel-link {
     color: var(--text);
@@ -263,10 +265,9 @@
     line-height: 1;
     border-radius: 4px;
   }
-  .remove-btn:hover { color: var(--accent); background: var(--bg); }
+  .remove-btn:hover { color: var(--danger); background: var(--button); }
   .status-msg {
     color: var(--text-muted);
-    font-style: italic;
     padding: 20px;
     text-align: center;
   }
@@ -281,7 +282,7 @@
     font-size: 1.1rem;
     font-weight: 600;
     pointer-events: none;
-    border-radius: 10px;
+    border-radius: 8px;
   }
   @media (max-width: 640px) {
     .panel {

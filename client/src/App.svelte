@@ -37,12 +37,13 @@
 <style>
   .app {
     min-height: 100vh;
+    background: var(--app-wash);
   }
   main {
     transition: margin-left 0.2s ease;
   }
   .sidebar-open main {
-    margin-left: 260px;
+    margin-left: 280px;
   }
   @media (max-width: 900px) {
     .sidebar-open main {

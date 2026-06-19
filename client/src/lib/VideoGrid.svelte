@@ -132,17 +132,17 @@
   .empty,
   .loading {
     color: var(--text-muted);
-    font-style: italic;
     padding: 40px 0;
     text-align: center;
   }
   .empty-img {
     display: block;
-    max-width: 280px;
+    max-width: 320px;
     width: 60%;
     height: auto;
     margin: 0 auto 16px;
-    opacity: 0.85;
+    border-radius: 18px;
+    box-shadow: var(--shadow);
   }
   .sentinel {
     height: 40px;
@@ -150,7 +150,6 @@
     align-items: center;
     justify-content: center;
     color: var(--text-muted);
-    font-style: italic;
     font-size: 0.85rem;
     margin-top: 16px;
   }

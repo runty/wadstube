@@ -26,23 +26,26 @@
     transform: translateX(-50%);
     padding: 10px 24px;
     border-radius: 8px;
+    box-shadow: var(--shadow);
     font-size: 0.85rem;
+    font-weight: 700;
     z-index: 400;
     animation: slideUp 0.2s ease;
     max-width: 90%;
     text-align: center;
   }
   .success {
-    background: #2d7a3a;
-    color: #fff;
+    background: var(--good);
+    color: #06140f;
   }
   .error {
-    background: #cc3333;
+    background: var(--danger);
     color: #fff;
   }
   .info {
-    background: #444;
-    color: #fff;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    color: var(--heading);
   }
   @keyframes slideUp {
     from { transform: translateX(-50%) translateY(20px); opacity: 0; }
