@@ -234,6 +234,7 @@
     object-fit: cover;
   }
   .brand-title {
+    font-family: "Comic Sans MS", "Comic Sans", "Comic Neue", cursive;
     font-size: 1.2rem;
     font-weight: 700;
     line-height: 1.1;
