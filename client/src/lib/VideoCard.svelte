@@ -103,7 +103,7 @@
     margin-bottom: 2px;
     cursor: pointer;
     padding: 0;
-    font-family: inherit;
+    font-family: var(--wads-display-font);
   }
   .card-channel:hover {
     color: var(--heading);
