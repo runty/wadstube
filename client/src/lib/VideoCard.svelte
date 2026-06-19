@@ -68,6 +68,7 @@
     padding: 10px 12px;
   }
   .card-title {
+    font-family: var(--wads-display-font);
     font-size: 1rem;
     font-weight: 600;
     color: var(--heading);
@@ -78,6 +79,7 @@
     margin-bottom: 4px;
   }
   .card-desc {
+    font-family: var(--wads-display-font);
     font-size: 0.85rem;
     color: var(--text-muted);
     display: -webkit-box;
