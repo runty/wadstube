@@ -74,7 +74,26 @@
   <button class="menu-btn" on:click={toggleSidebar} title="Toggle folders">
     &#9776;
   </button>
-  <h1>WadsTube</h1>
+  <div class="brand-wrapper">
+    <button
+      class="brand-button"
+      on:click|stopPropagation={() => showGearMenu = !showGearMenu}
+      aria-haspopup="menu"
+      aria-expanded={showGearMenu}
+      title="Settings"
+    >
+      <span class="brand-mark" aria-hidden="true">
+        <img src="/wads.png" alt="" />
+      </span>
+      <span class="brand-title">WadsTube</span>
+    </button>
+    {#if showGearMenu}
+      <div class="gear-menu title-menu" role="menu" aria-label="Settings">
+        <button on:click={handleBackup} role="menuitem">&#8615; Backup</button>
+        <button on:click={handleRestoreClick} role="menuitem">&#8613; Restore</button>
+      </div>
+    {/if}
+  </div>
   <div class="search-wrapper">
     <input
       class="search"
@@ -84,15 +103,6 @@
     />
     {#if $searchQuery}
       <button class="search-clear" on:click={() => searchQuery.set("")}>&times;</button>
-    {/if}
-  </div>
-  <div class="gear-wrapper">
-    <button class="icon-btn" on:click|stopPropagation={() => showGearMenu = !showGearMenu} title="Settings">&#8942;</button>
-    {#if showGearMenu}
-      <div class="gear-menu">
-        <button on:click={handleBackup}>&#8615; Backup</button>
-        <button on:click={handleRestoreClick}>&#8613; Restore</button>
-      </div>
     {/if}
   </div>
   <input type="file" accept=".json" bind:this={fileInput} on:change={handleRestoreFile} hidden />
@@ -136,8 +146,47 @@
   .menu-btn:hover {
     background: var(--card-bg);
   }
-  h1 {
+  .brand-wrapper {
+    position: relative;
+    flex: 0 0 auto;
+  }
+  .brand-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    padding: 2px 4px;
+    border-radius: 7px;
+    cursor: pointer;
+    font: inherit;
+  }
+  .brand-button:hover {
+    background: var(--card-bg);
+  }
+  .brand-mark {
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card-bg);
+    box-shadow: var(--shadow);
+  }
+  .brand-mark img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .brand-title {
     font-size: 1.2rem;
+    font-weight: 700;
     color: var(--text);
   }
   .search-wrapper {
@@ -172,27 +221,10 @@
     line-height: 1;
   }
   .search-clear:hover { color: var(--text); }
-  .icon-btn {
-    background: none;
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    font-size: 1.1rem;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 6px;
-    line-height: 1;
-  }
-  .icon-btn:hover {
-    color: var(--text);
-    border-color: var(--text-muted);
-  }
-  .gear-wrapper {
-    position: relative;
-  }
   .gear-menu {
     position: absolute;
     top: 100%;
-    right: 0;
+    left: 58px;
     margin-top: 6px;
     background: var(--card-bg);
     border: 1px solid var(--border);
@@ -220,10 +252,33 @@
     header {
       padding: 10px 12px;
       gap: 8px;
+      flex-wrap: wrap;
     }
-    h1 { display: none; }
-    .search-wrapper { max-width: none; }
-    .refresh-btn { padding: 6px 10px; font-size: 0.8rem; }
+    .brand-button {
+      gap: 8px;
+      padding-inline: 2px;
+    }
+    .brand-mark {
+      width: 40px;
+      height: 40px;
+    }
+    .brand-title {
+      font-size: 0.98rem;
+    }
+    .gear-menu {
+      left: 50px;
+    }
+    .search-wrapper {
+      order: 4;
+      flex: 1 1 100%;
+      max-width: none;
+    }
+    .refresh-btn {
+      order: 3;
+      margin-left: auto;
+      padding: 6px 10px;
+      font-size: 0.8rem;
+    }
   }
   .refresh-btn {
     background: var(--accent);
