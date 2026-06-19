@@ -1,4 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 20">
-  <rect width="28" height="20" rx="5" fill="#ea580c"/>
-  <polygon points="11,4 11,16 21,10" fill="white"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="15" fill="#f05a28"/>
+  <rect x="9" y="18" width="46" height="30" rx="10" fill="#e22d2d"/>
+  <path d="M28 24v18l16-9z" fill="#ffffff"/>
+  <path d="M17 18c3-5 7-8 12-8s9 3 12 8" fill="none" stroke="#191305" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="47" cy="47" r="4" fill="#ffbf47"/>
 </svg>
