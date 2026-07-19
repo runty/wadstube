@@ -24,14 +24,16 @@ function monthKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function atomicCopy(src, dest) {
-  const tmp = dest + ".tmp";
-  fs.copyFileSync(src, tmp);
-  fs.renameSync(tmp, dest);
-}
-
 function backupsRoot(dataDir) {
   return path.join(dataDir, "backups");
+}
+
+function trackAppTask(appState, promise) {
+  if (!appState) return promise;
+  appState.activeTasks ||= new Set();
+  appState.activeTasks.add(promise);
+  promise.finally(() => appState.activeTasks.delete(promise));
+  return promise;
 }
 
 function ensureBackupsDir(dataDir) {
@@ -46,7 +48,12 @@ function listBackups(dataDir) {
   if (!fs.existsSync(root)) return [];
   return fs
     .readdirSync(root, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(e.name))
+    .filter((e) => {
+      if (!e.isDirectory() || !/^\d{4}-\d{2}-\d{2}$/.test(e.name)) return false;
+      const dir = path.join(root, e.name);
+      return fs.existsSync(path.join(dir, "tube.json")) &&
+        fs.existsSync(path.join(dir, "wadstube.db"));
+    })
     .map((e) => e.name)
     .sort()
     .reverse();
@@ -56,28 +63,40 @@ function createBackup(dataDir, db) {
   const date = localDateString();
   const root = ensureBackupsDir(dataDir);
   const destDir = path.join(root, date);
-  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+  const stageDir = fs.mkdtempSync(path.join(root, `.${date}.stage-`));
+  const oldDir = path.join(root, `.${date}.old-${process.pid}-${Date.now()}`);
+  let oldPublished = false;
+  try {
+    const tubeSource = path.join(dataDir, "tube.json");
+    if (!fs.existsSync(tubeSource)) throw new Error("tube.json is missing");
+    if (!db) throw new Error("database snapshot provider is required");
+    fs.copyFileSync(tubeSource, path.join(stageDir, "tube.json"));
+    db.vacuumInto(path.join(stageDir, "wadstube.db"));
 
-  const files = ["tube.json"];
-  const copied = [];
-  for (const name of files) {
-    const src = path.join(dataDir, name);
-    if (!fs.existsSync(src)) continue;
-    atomicCopy(src, path.join(destDir, name));
-    copied.push(name);
-  }
-
-  if (db) {
-    try {
-      const dbDest = path.join(destDir, "wadstube.db");
-      db.vacuumInto(dbDest);
-      copied.push("wadstube.db");
-    } catch (err) {
-      console.error(`[backup] db snapshot failed: ${err.message}`);
+    // Publish the complete directory as a unit. If the second rename fails,
+    // restore the prior directory before returning an error.
+    if (fs.existsSync(destDir)) {
+      fs.renameSync(destDir, oldDir);
+      oldPublished = true;
     }
+    try {
+      fs.renameSync(stageDir, destDir);
+    } catch (err) {
+      if (oldPublished && !fs.existsSync(destDir)) fs.renameSync(oldDir, destDir);
+      throw err;
+    }
+    if (oldPublished) {
+      try { fs.rmSync(oldDir, { recursive: true, force: true }); }
+      catch (err) { console.warn(`[backup] could not remove replaced snapshot ${oldDir}: ${err.message}`); }
+    }
+    return { dir: destDir, files: ["tube.json", "wadstube.db"], ok: true };
+  } catch (error) {
+    try { fs.rmSync(stageDir, { recursive: true, force: true }); } catch {}
+    if (oldPublished && fs.existsSync(oldDir) && !fs.existsSync(destDir)) {
+      try { fs.renameSync(oldDir, destDir); } catch {}
+    }
+    return { dir: destDir, files: [], ok: false, error };
   }
-
-  return { dir: destDir, files: copied };
 }
 
 // Strict GFS retention:
@@ -135,14 +154,17 @@ function applyRetention(dataDir) {
 }
 
 async function runBackupNow(dataDir, db, appState) {
+  let handle = null;
   try {
-    // Wait out any in-flight refresh so VACUUM INTO doesn't race with
-    // SQLite writes. Noop if no appState was wired (e.g. test harness).
+    // Atomically become the exclusive owner after any in-flight refresh.
+    // Merely observing an idle lock leaves a race where a new refresh can
+    // start before VACUUM INTO begins.
     if (appState) {
-      const { waitForRefreshIdle } = require("./refresh");
-      await waitForRefreshIdle(appState);
+      const { acquireLockWhenIdle } = require("./refresh");
+      handle = await acquireLockWhenIdle(appState);
     }
-    const { dir, files } = createBackup(dataDir, db);
+    const { dir, files, ok, error } = createBackup(dataDir, db);
+    if (!ok) throw error;
     const { kept, deleted } = applyRetention(dataDir);
     console.log(
       `[backup] wrote ${path.basename(dir)} (${files.join(", ") || "nothing"}); ` +
@@ -150,6 +172,11 @@ async function runBackupNow(dataDir, db, appState) {
     );
   } catch (err) {
     console.error(`[backup] failed: ${err.message}`);
+  } finally {
+    if (handle) {
+      const { releaseLock } = require("./refresh");
+      releaseLock(appState, handle);
+    }
   }
 }
 
@@ -166,7 +193,7 @@ function catchUpIfStale(dataDir, db, appState) {
   const names = listBackups(dataDir);
   if (names.length === 0) {
     console.log("[backup] no prior backup found, creating initial backup");
-    runBackupNow(dataDir, db, appState);
+    trackAppTask(appState, runBackupNow(dataDir, db, appState));
     return;
   }
   const latest = names[0]; // newest first
@@ -175,7 +202,7 @@ function catchUpIfStale(dataDir, db, appState) {
   const ageHours = (Date.now() - latestDate.getTime()) / 3600000;
   if (ageHours > 25) {
     console.log(`[backup] most recent backup is ${ageHours.toFixed(0)}h old, creating catch-up backup`);
-    runBackupNow(dataDir, db, appState);
+    trackAppTask(appState, runBackupNow(dataDir, db, appState));
   }
 }
 
@@ -183,17 +210,26 @@ function scheduleBackups(dataDir, db, appState) {
   ensureBackupsDir(dataDir);
   catchUpIfStale(dataDir, db, appState);
 
+  let stopped = false;
+  let timer = null;
   function scheduleNext() {
+    if (stopped) return;
     const delay = msUntilNext1am();
     const when = new Date(Date.now() + delay);
     console.log(`[backup] next run at ${when.toString()} (in ${(delay / 3600000).toFixed(1)}h)`);
-    setTimeout(() => {
-      runBackupNow(dataDir, db, appState);
+    timer = setTimeout(() => {
+      trackAppTask(appState, runBackupNow(dataDir, db, appState));
       scheduleNext(); // recompute next 1am to be DST-safe
     }, delay);
   }
 
   scheduleNext();
+  return {
+    stop() {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    },
+  };
 }
 
 module.exports = {

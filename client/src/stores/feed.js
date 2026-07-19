@@ -10,6 +10,28 @@ export const showChannelsFor = writable(null);
 export const toast = writable(null);
 export const searchQuery = writable("");
 export const activeChannelId = writable(null);
+export const viewFilter = writable("all");
+export const favoritesOnly = writable(false);
+export const density = writable("grid");
+export const sortOrder = writable("newest");
+export const showHealth = writable(false);
+export const channelHealth = writable([]);
+export const healthFilter = writable("all");
+export const quotaStatus = writable(null);
+export const refreshRuns = writable([]);
+// One shared channel-list cache prevents recursive sidebar nodes and the
+// management dialog from showing conflicting favorite/unread metadata.
+export const channelLists = writable({});
+const channelLoads = new Map();
+const channelControllers = new Map();
+let channelCacheGeneration = 0;
+export function clearChannelLists() {
+  channelCacheGeneration++;
+  for (const controller of channelControllers.values()) controller.abort();
+  channelControllers.clear();
+  channelLists.set({});
+  channelLoads.clear();
+}
 
 // Live state of an in-progress refresh: total channels, how many finished,
 // counts, and up to CHANNEL_CONCURRENCY slots for currently-fetching
@@ -35,18 +57,35 @@ export async function loadFolders() {
   folders.set(await resp.json());
 }
 
+export async function resetAfterSubscriptionImport() {
+  clearChannelLists();
+  activeFolder.set("__all__");
+  activeChannelId.set(null);
+  searchQuery.set("");
+  const results = await Promise.allSettled([
+    loadFolders(),
+    loadVideos("__all__", { channelId: null, q: null }),
+  ]);
+  return { reloadFailures: results.filter((result) => result.status === "rejected").length };
+}
+
 // Sequence counter so late-arriving responses from a superseded query
 // don't stomp the current one (e.g. while you're typing in search).
 let _loadSeq = 0;
 const _currentQuery = { folder: null, channelId: null, q: null };
+let _abortController;
 
-function buildVideosUrl({ folder, channelId, q, before, beforeId }) {
+function buildVideosUrl({ folder, channelId, q, before, beforeId, beforeFavorite, view, favorites, sort }) {
   const params = new URLSearchParams();
   if (folder && folder !== "__all__") params.set("folder", folder);
   if (channelId) params.set("channel", channelId);
   if (q) params.set("q", q);
   if (before) params.set("before", before);
   if (beforeId) params.set("before_id", beforeId);
+  if (beforeFavorite) params.set("before_favorite", "1");
+  if (view && view !== "all") params.set("view", view);
+  if (favorites) params.set("favorites", "1");
+  if (sort && sort !== "newest") params.set("sort", sort);
   const s = params.toString();
   return `${API}/api/videos${s ? `?${s}` : ""}`;
 }
@@ -54,12 +93,28 @@ function buildVideosUrl({ folder, channelId, q, before, beforeId }) {
 export async function loadVideos(folder, opts = {}) {
   const channelId = opts.channelId || null;
   const q = opts.q || null;
+  const view = opts.view || get(viewFilter);
+  const favorites = opts.favorites ?? get(favoritesOnly);
+  const sort = opts.sort || get(sortOrder);
   const seq = ++_loadSeq;
   _currentQuery.folder = folder;
   _currentQuery.channelId = channelId;
   _currentQuery.q = q;
+  _currentQuery.view = view;
+  _currentQuery.favorites = favorites;
+  _currentQuery.sort = sort;
 
-  const resp = await fetch(buildVideosUrl({ folder, channelId, q }));
+  _abortController?.abort();
+  _abortController = new AbortController();
+  let resp;
+  try {
+    resp = await fetch(buildVideosUrl({ folder, channelId, q, view, favorites, sort }), {
+      signal: _abortController.signal,
+    });
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    throw err;
+  }
   if (!resp.ok) throw new Error(`Failed to load videos (${resp.status})`);
   const data = await resp.json();
   if (seq !== _loadSeq) return; // a newer request has since fired
@@ -75,10 +130,11 @@ export async function loadMoreVideos() {
   const tail = current[current.length - 1];
   const before = tail.published;
   const beforeId = tail.video_id;
+  const beforeFavorite = tail.channel_favorite;
   loadingMore.set(true);
   const seq = _loadSeq;
   try {
-    const resp = await fetch(buildVideosUrl({ ..._currentQuery, before, beforeId }));
+    const resp = await fetch(buildVideosUrl({ ..._currentQuery, before, beforeId, beforeFavorite }));
     if (!resp.ok) throw new Error(`Failed to load more (${resp.status})`);
     const data = await resp.json();
     // Abandon the page if the user has changed filters in the meantime.
@@ -121,16 +177,53 @@ export async function deleteFolderApi(name) {
   const data = await resp.json();
   if (!resp.ok) throw new Error(data.error);
   folders.set(data.folders);
+  clearChannelLists();
   activeFolder.set("__all__");
+  activeChannelId.set(null);
   await loadVideos("__all__");
 }
 
 // --- Channel management ---
 
-export async function loadChannels(folderName) {
-  const resp = await fetch(`${API}/api/folders/${encodeURIComponent(folderName)}/channels`);
-  if (!resp.ok) throw new Error(`Failed to load channels (${resp.status})`);
-  return await resp.json();
+export async function loadChannels(folderId, force = false) {
+  const cachedState = get(channelLists);
+  const cached = Object.hasOwn(cachedState, folderId) ? cachedState[folderId] : undefined;
+  if (!force && cached) return cached;
+  if (!force && channelLoads.has(folderId)) return channelLoads.get(folderId);
+  if (force) channelControllers.get(folderId)?.abort();
+  const controller = new AbortController();
+  const generation = channelCacheGeneration;
+  channelControllers.set(folderId, controller);
+  const request = (async () => {
+    try {
+      const resp = await fetch(`${API}/api/folders/${encodeURIComponent(folderId)}/channels`, {
+        signal: controller.signal,
+      });
+      if (!resp.ok) throw new Error(`Failed to load channels (${resp.status})`);
+      const rows = await resp.json();
+      if (generation === channelCacheGeneration && channelControllers.get(folderId) === controller) {
+        channelLists.update((all) => ({ ...all, [folderId]: rows }));
+      }
+      return rows;
+    } catch (err) {
+      if (err.name === "AbortError") {
+        const current = get(channelLists);
+        return Object.hasOwn(current, folderId) ? current[folderId] : [];
+      }
+      throw err;
+    }
+  })();
+  channelLoads.set(folderId, request);
+  try { return await request; }
+  finally {
+    if (channelLoads.get(folderId) === request) channelLoads.delete(folderId);
+    if (channelControllers.get(folderId) === controller) channelControllers.delete(folderId);
+  }
+}
+
+async function reloadCachedChannelLists() {
+  const ids = Object.keys(get(channelLists));
+  await Promise.allSettled(ids.map((id) => loadChannels(id, true)));
 }
 
 export async function addChannelToFolder(folderName, urlOrId) {
@@ -143,6 +236,7 @@ export async function addChannelToFolder(folderName, urlOrId) {
   const data = await resp.json();
   if (!resp.ok) throw new Error(data.error);
   folders.set(data.folders);
+  await loadChannels(folderName, true);
   return data;
 }
 
@@ -154,6 +248,10 @@ export async function removeChannelFromFolder(folderName, channelId) {
   const data = await resp.json();
   if (!resp.ok) throw new Error(data.error);
   folders.set(data.folders);
+  await loadChannels(folderName, true);
+  if (get(activeChannelId) === channelId) {
+    activeChannelId.set(null);
+  }
 }
 
 export async function renameChannelApi(folderName, channelId, newName) {
@@ -167,6 +265,7 @@ export async function renameChannelApi(folderName, channelId, newName) {
   );
   const data = await resp.json();
   if (!resp.ok) throw new Error(data.error);
+  await reloadCachedChannelLists();
   return data;
 }
 
@@ -182,7 +281,163 @@ export async function moveChannelApi(sourceFolderName, channelId, destFolderName
   const data = await resp.json();
   if (!resp.ok) throw new Error(data.error);
   folders.set(data.folders);
+  await Promise.all([loadChannels(sourceFolderName, true), loadChannels(destFolderName, true)]);
+  if (get(activeChannelId) === channelId) {
+    activeFolder.set(destFolderName);
+  }
   return data;
+}
+
+export async function setVideoState(videoId, changes) {
+  const resp = await fetch(`${API}/api/videos/${encodeURIComponent(videoId)}/state`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || "Failed to update video");
+  const state = data.state;
+  videos.update((rows) => rows.map((video) => video.video_id === videoId
+    ? { ...video, watched: state.watched, starred: state.starred, hidden: state.hidden }
+    : video));
+  if ((get(viewFilter) === "unread" && state.watched) ||
+      (get(viewFilter) === "starred" && !state.starred) ||
+      (get(viewFilter) !== "hidden" && state.hidden) ||
+      (get(viewFilter) === "hidden" && !state.hidden)) {
+    videos.update((rows) => rows.filter((video) => video.video_id !== videoId));
+  }
+  Promise.allSettled([loadFolders(), reloadCachedChannelLists()]);
+  return state;
+}
+
+export async function setChannelFavorite(channelId, favorite) {
+  const resp = await fetch(`${API}/api/channels/${encodeURIComponent(channelId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ favorite }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || "Failed to update favorite");
+  channelLists.update((all) => Object.fromEntries(Object.entries(all).map(([folderId, rows]) => [
+    folderId,
+    rows.map((channel) => channel.id === channelId ? { ...channel, favorite } : channel)
+      .sort((a, b) => Number(b.favorite) - Number(a.favorite) || a.name.localeCompare(b.name)),
+  ])));
+  await loadVideos(get(activeFolder), {
+    channelId: get(activeChannelId), q: get(searchQuery), view: get(viewFilter),
+    favorites: get(favoritesOnly), sort: get(sortOrder),
+  });
+  return data.channel;
+}
+
+export async function loadChannelHealth(filter = get(healthFilter)) {
+  const params = new URLSearchParams();
+  if (filter !== "all") params.set("status", filter);
+  const resp = await fetch(`${API}/api/channels?${params}`);
+  if (!resp.ok) throw new Error(`Failed to load channel health (${resp.status})`);
+  channelHealth.set(await resp.json());
+}
+
+export async function loadQuotaStatus() {
+  const resp = await fetch(`${API}/api/status/quota`);
+  if (!resp.ok) throw new Error(`Failed to load quota status (${resp.status})`);
+  const value = await resp.json();
+  quotaStatus.set(value);
+  return value;
+}
+
+export async function loadRefreshRuns(limit = 20) {
+  const resp = await fetch(`${API}/api/status/refresh-runs?limit=${encodeURIComponent(limit)}`);
+  if (!resp.ok) throw new Error(`Failed to load refresh history (${resp.status})`);
+  const value = await resp.json();
+  refreshRuns.set(value);
+  return value;
+}
+
+export async function retryChannel(channelId) {
+  let summary;
+  let mutationError;
+  try {
+    const resp = await fetch(`${API}/api/channels/${encodeURIComponent(channelId)}/refresh`, {
+      method: "POST",
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Channel refresh failed");
+    summary = data.summary;
+  } catch (err) {
+    mutationError = err;
+  } finally {
+    // Refresh operational reports even when the retry itself fails. Ancillary
+    // reload failures must not misreport a successful server-side mutation.
+    await Promise.allSettled([
+      loadChannelHealth(),
+      loadFolders(),
+      reloadCachedChannelLists(),
+      loadVideos(get(activeFolder), {
+        channelId: get(activeChannelId), q: get(searchQuery),
+      }),
+      loadQuotaStatus(),
+      loadRefreshRuns(),
+    ]);
+  }
+  if (mutationError) throw mutationError;
+  return summary;
+}
+
+export function initializeUrlState() {
+  const params = new URLSearchParams(window.location.search);
+  activeFolder.set(params.get("folder") || "__all__");
+  activeChannelId.set(params.get("channel"));
+  searchQuery.set(params.get("q") || "");
+  viewFilter.set(["all", "unread", "starred", "hidden"].includes(params.get("view")) ? params.get("view") : "all");
+  favoritesOnly.set(params.get("favorites") === "1");
+  density.set(["grid", "compact", "list"].includes(params.get("density")) ? params.get("density") : "grid");
+  sortOrder.set(["newest", "oldest", "favorite"].includes(params.get("sort")) ? params.get("sort") : "newest");
+}
+
+let _urlSyncStarted = false;
+export function startUrlSync() {
+  if (_urlSyncStarted) return () => {};
+  _urlSyncStarted = true;
+  let applyingPop = false;
+  let historyReady = false;
+  let historyTimer;
+  const write = () => {
+    if (applyingPop) return;
+    const params = new URLSearchParams();
+    const values = {
+      folder: get(activeFolder), channel: get(activeChannelId), q: get(searchQuery),
+      view: get(viewFilter), density: get(density), sort: get(sortOrder),
+    };
+    if (values.folder && values.folder !== "__all__") params.set("folder", values.folder);
+    if (values.channel) params.set("channel", values.channel);
+    if (values.q) params.set("q", values.q);
+    if (values.view !== "all") params.set("view", values.view);
+    if (get(favoritesOnly)) params.set("favorites", "1");
+    if (values.density !== "grid") params.set("density", values.density);
+    if (values.sort !== "newest") params.set("sort", values.sort);
+    const query = params.toString();
+    const next = `${location.pathname}${query ? `?${query}` : ""}`;
+    clearTimeout(historyTimer);
+    historyTimer = undefined;
+    if (`${location.pathname}${location.search}` === next) { historyReady = true; return; }
+    historyTimer = setTimeout(() => {
+      if (applyingPop) return;
+      history[historyReady ? "pushState" : "replaceState"]({}, "", next);
+      historyReady = true;
+    }, historyReady ? 250 : 0);
+  };
+  const stores = [activeFolder, activeChannelId, searchQuery, viewFilter, favoritesOnly, density, sortOrder];
+  const unsubs = stores.map((store) => store.subscribe(write));
+  const pop = () => {
+    clearTimeout(historyTimer);
+    historyTimer = undefined;
+    applyingPop = true;
+    initializeUrlState();
+    queueMicrotask(() => { applyingPop = false; });
+  };
+  window.addEventListener("popstate", pop);
+  return () => { clearTimeout(historyTimer); unsubs.forEach((fn) => fn()); window.removeEventListener("popstate", pop); _urlSyncStarted = false; };
 }
 
 export async function refreshFolder(folder) {
@@ -237,10 +492,14 @@ export async function refreshFolder(folder) {
     // Don't pretend it was successful.
     if (!summary) throw new Error("Refresh stream ended before completion");
 
-    await loadVideos(folder, {
+    await Promise.all([loadFolders(), reloadCachedChannelLists(), loadVideos(folder, {
       channelId: get(activeChannelId) || null,
       q: get(searchQuery) || null,
-    });
+      view: get(viewFilter),
+      favorites: get(favoritesOnly),
+      sort: get(sortOrder),
+    })]);
+    await Promise.allSettled([loadQuotaStatus(), loadRefreshRuns()]);
     return summary;
   } catch (err) {
     const msg = (err?.message || "").trim() || "Something went wrong";

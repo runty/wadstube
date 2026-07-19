@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const CHANNEL_ID_RE = /^UC[A-Za-z0-9_-]{22}$/;
 
 // One-time import of the legacy cache.json blob into SQLite. Runs on boot
 // when the DB has no channel rows and cache.json exists. The old cache was
@@ -24,6 +25,7 @@ function migrateCacheJsonIfNeeded(db, dataDir) {
   let channelCount = 0;
 
   for (const [channelId, entry] of Object.entries(channels)) {
+    if (!CHANNEL_ID_RE.test(channelId)) continue;
     const videos = entry?.videos || [];
     if (!videos.length) continue;
     const title = videos[0]?.channel || "Unknown";

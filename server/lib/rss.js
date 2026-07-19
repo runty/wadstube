@@ -1,4 +1,5 @@
 const { XMLParser } = require("fast-xml-parser");
+const { recordNetwork } = require("./quota");
 
 const FEED_BASE = "https://www.youtube.com/feeds/videos.xml";
 // Keep concurrency low — YouTube's RSS endpoint starts returning 404/5xx
@@ -75,26 +76,27 @@ function parseFeed(xml, channelId) {
   return { channelTitle, videos };
 }
 
-async function fetchOnce(channelId, cached) {
+async function fetchOnce(channelId, cached, context = {}) {
   const url = `${FEED_BASE}?channel_id=${encodeURIComponent(channelId)}`;
   const headers = { "User-Agent": USER_AGENT };
   if (cached.last_etag) headers["If-None-Match"] = cached.last_etag;
   if (cached.last_modified) headers["If-Modified-Since"] = cached.last_modified;
+  recordNetwork(context.metrics, "rss");
   return fetchWithTimeout(url, { headers });
 }
 
 // Result shape:
 //   { channelId, status: "ok" | "not_modified" | "error", videos, channelTitle,
 //     etag, lastModified, error? }
-async function fetchChannelFeed(channelId, cached = {}) {
+async function fetchChannelFeed(channelId, cached = {}, context = {}) {
   let resp;
   let lastErr;
   try {
-    resp = await fetchOnce(channelId, cached);
+    resp = await fetchOnce(channelId, cached, context);
     for (const delay of RETRY_DELAYS_MS) {
       if (resp.status < 500 && resp.status !== 404) break;
       await new Promise((r) => setTimeout(r, delay));
-      resp = await fetchOnce(channelId, cached);
+      resp = await fetchOnce(channelId, cached, context);
     }
   } catch (err) {
     lastErr = err;

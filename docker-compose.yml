@@ -1,6 +1,8 @@
 services:
   tube:
     build: .
+    # Set TUBE_UID_GID=1000:1000 only after chowning ./data to that UID/GID.
+    user: "${TUBE_UID_GID:-0:0}"
     ports:
       - "3000:3000"
     volumes:
@@ -10,12 +12,15 @@ services:
       - DATA_DIR=/app/data
       - PORT=3000
       - MAX_VIDEOS=${MAX_VIDEOS:-50}
-      # Poller disabled 2026-04-19 while YouTube's RSS rate limit cools off
-      # — re-enable by unsetting or bumping back to 30.
-      - REFRESH_INTERVAL_MINUTES=${REFRESH_INTERVAL_MINUTES:-0}
       - REFRESH_MODE=${REFRESH_MODE:-rss}
-      - REFRESH_MODE_MANUAL=${REFRESH_MODE_MANUAL:-api}
-      - REFRESH_MODE_POLLER=${REFRESH_MODE_POLLER:-rss}
+      - REFRESH_MODE_MANUAL=${REFRESH_MODE_MANUAL:-}
+      - SMART_REFRESH_POLICY_JSON=${SMART_REFRESH_POLICY_JSON:-}
+      - YOUTUBE_QUOTA_GENERAL_LIMIT=${YOUTUBE_QUOTA_GENERAL_LIMIT:-10000}
+      - YOUTUBE_QUOTA_SEARCH_LIMIT=${YOUTUBE_QUOTA_SEARCH_LIMIT:-100}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+      - PUBLIC_ORIGIN=${PUBLIC_ORIGIN:-}
+      - TRUST_PROXY=${TRUST_PROXY:-}
       - TZ=${TZ:-America/Los_Angeles}
     restart: unless-stopped
+    stop_grace_period: 60s
     mem_limit: 512m

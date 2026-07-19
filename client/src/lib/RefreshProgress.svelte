@@ -3,7 +3,7 @@
 </script>
 
 {#if $refreshProgress.active}
-  <div class="progress">
+  <div class="progress" role="status" aria-live="polite" aria-atomic="false">
     <div class="header">
       <span class="label">Refreshing</span>
       <span class="count">

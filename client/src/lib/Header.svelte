@@ -1,9 +1,17 @@
 <script>
-  import { activeFolder, refreshFolder, refreshing, error, sidebarOpen, searchQuery, folders, toast } from "../stores/feed.js";
+  import { onMount } from "svelte";
+  import { activeFolder, refreshFolder, refreshing, error, sidebarOpen, searchQuery, toast, showHealth, quotaStatus, loadQuotaStatus, resetAfterSubscriptionImport } from "../stores/feed.js";
   import { setThemeMode, themeMode } from "../stores/theme.js";
 
   let fileInput;
   let showGearMenu = false;
+  let brandButton;
+
+  onMount(() => {
+    loadQuotaStatus().catch(() => {});
+    const timer = setInterval(() => loadQuotaStatus().catch(() => {}), 60_000);
+    return () => clearInterval(timer);
+  });
 
   function toggleSidebar() {
     sidebarOpen.update((v) => !v);
@@ -18,13 +26,28 @@
         ? "No new videos"
         : `Added ${n} new video${n === 1 ? "" : "s"}`;
       const suffix = errs > 0 ? ` (${errs} channel${errs === 1 ? "" : "s"} errored)` : "";
-      toast.set({ message: msg + suffix, type: n > 0 ? "success" : "info" });
+      const skipped = result?.skipped || 0;
+      const skippedSuffix = skipped > 0
+        ? ` · ${skipped} skipped`
+        : "";
+      const report = ` · ${result?.checked ?? 0} channels checked · ${result?.api_units || 0} API units this refresh · ${result?.daily_used ?? "?"} API units used today`;
+      toast.set({
+        message: msg + suffix + skippedSuffix + report,
+        type: n > 0 ? "success" : "info",
+        durationMs: 10_000,
+      });
     } catch {
       // error is already set in the store
     }
   }
 
   function closeGearMenu() { showGearMenu = false; }
+  function handleSettingsKeydown(event) {
+    if (event.key !== "Escape" || !showGearMenu) return;
+    event.preventDefault();
+    showGearMenu = false;
+    brandButton?.focus();
+  }
 
   function dismissError() {
     error.set(null);
@@ -33,6 +56,11 @@
   function handleBackup() {
     showGearMenu = false;
     window.open("/api/backup", "_blank");
+  }
+
+  function handleFullBackup() {
+    showGearMenu = false;
+    window.open("/api/full-backup", "_blank");
   }
 
   function handleRestoreClick() {
@@ -48,7 +76,7 @@
       const text = await file.text();
       const data = JSON.parse(text);
 
-      if (!confirm(`Restore from "${file.name}"? This will replace all current folders and channels.`)) return;
+      if (!confirm(`Import subscriptions from "${file.name}"? This will replace all current folders and channels.`)) return;
 
       const resp = await fetch("/api/restore", {
         method: "POST",
@@ -58,14 +86,19 @@
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error);
 
-      folders.set(result.folders);
-      toast.set({ message: "Backup restored successfully", type: "success" });
+      const reload = await resetAfterSubscriptionImport();
+      toast.set({
+        message: reload.reloadFailures
+          ? "Subscriptions imported successfully. Refresh the page if some updated data is not visible yet."
+          : "Subscriptions imported successfully",
+        type: "success",
+      });
     } catch (err) {
       error.set(err.message || "Failed to restore backup");
+    } finally {
+      // Reset even after cancel so selecting the same file works next time.
+      e.target.value = "";
     }
-
-    // Reset file input so same file can be selected again
-    e.target.value = "";
   }
 </script>
 
@@ -78,9 +111,11 @@
   <div class="brand-wrapper">
     <button
       class="brand-button"
+      bind:this={brandButton}
       on:click|stopPropagation={() => showGearMenu = !showGearMenu}
-      aria-haspopup="menu"
+      on:keydown={handleSettingsKeydown}
       aria-expanded={showGearMenu}
+      aria-controls="settings-popover"
       title="Settings"
     >
       <span class="brand-mark" aria-hidden="true">
@@ -89,25 +124,35 @@
       <span class="brand-title">WadsTube</span>
     </button>
     {#if showGearMenu}
-      <div class="gear-menu title-menu" role="menu" aria-label="Settings">
-        <button type="button" on:click={handleBackup} role="menuitem">&#8615; Backup</button>
-        <button type="button" on:click={handleRestoreClick} role="menuitem">&#8613; Restore</button>
+      <div id="settings-popover" class="gear-menu title-menu" aria-label="Settings">
+        <button type="button" on:keydown={handleSettingsKeydown} on:click={() => { showGearMenu = false; showHealth.set(true); }}>Channel health</button>
+        <button type="button" on:keydown={handleSettingsKeydown} on:click={handleBackup}>&#8615; Export subscriptions</button>
+        <button type="button" on:keydown={handleSettingsKeydown} on:click={handleFullBackup}>&#8615; Full backup</button>
+        <button type="button" on:keydown={handleSettingsKeydown} on:click={handleRestoreClick}>&#8613; Import subscriptions</button>
       </div>
     {/if}
   </div>
   <div class="search-wrapper">
+    <label for="video-search" class="sr-only">Search videos</label>
     <input
+      id="video-search"
       class="search"
       type="text"
       placeholder="Search videos..."
       bind:value={$searchQuery}
     />
     {#if $searchQuery}
-      <button class="search-clear" on:click={() => searchQuery.set("")}>&times;</button>
+      <button class="search-clear" on:click={() => searchQuery.set("")} aria-label="Clear video search">&times;</button>
     {/if}
   </div>
   <input type="file" accept=".json" bind:this={fileInput} on:change={handleRestoreFile} hidden />
   <div class="header-actions">
+    {#if $quotaStatus?.buckets?.general}
+      <button class="quota-meter" type="button" on:click={() => showHealth.set(true)}
+        title={`Resets ${new Date($quotaStatus.resetAt).toLocaleString()}`}>
+        API {$quotaStatus.buckets.general.remaining.toLocaleString()} left
+      </button>
+    {/if}
     <div class="wads-theme-switch" role="group" aria-label="Color theme">
       <button
         class:active={$themeMode === "system"}
@@ -153,13 +198,14 @@
 </header>
 
 {#if $error && String($error).trim()}
-  <div class="error-bar">
+  <div class="error-bar" role="alert" aria-live="assertive">
     <span>{$error}</span>
-    <button class="dismiss" on:click={dismissError}>&times;</button>
+    <button class="dismiss" on:click={dismissError} aria-label="Dismiss error">&times;</button>
   </div>
 {/if}
 
 <style>
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
   header {
     position: sticky;
     top: 0;
@@ -280,6 +326,8 @@
     flex: 0 0 auto;
     margin-left: auto;
   }
+  .quota-meter { background: var(--button); color: var(--text-muted); border: 1px solid var(--border); border-radius: 7px; min-height: 38px; padding: 0 9px; font: inherit; font-size: .74rem; cursor: pointer; }
+  .quota-meter:hover { color: var(--heading); border-color: var(--border-strong); }
   .wads-theme-switch {
     display: inline-grid;
     grid-template-columns: repeat(3, 30px);
@@ -371,6 +419,7 @@
       gap: 8px;
       margin-left: auto;
     }
+    .quota-meter { display: none; }
     .gear-menu {
       position: fixed;
       top: calc(var(--header-height) + 8px);

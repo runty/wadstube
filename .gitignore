@@ -1,6 +1,5 @@
 .env
 .venv/
-.claude/
 __pycache__/
 node_modules/
 client/dist/

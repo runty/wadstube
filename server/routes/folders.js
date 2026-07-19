@@ -1,7 +1,8 @@
 const express = require("express");
-const router = express.Router();
 
 module.exports = function (appState) {
+  const router = express.Router();
+  const { rateLimit } = require("../lib/security");
   const {
     getFolderTreeSummary,
     createFolder,
@@ -14,6 +15,8 @@ module.exports = function (appState) {
     moveChannel,
     saveData,
     allReferencedChannelIds,
+    isResolvedChannel,
+    resolveFolderRouteId,
   } = require("../lib/data");
 
   // After mutations that may remove channels from the tree, drop their
@@ -25,14 +28,56 @@ module.exports = function (appState) {
       console.log(`Purged ${removed} orphan channel(s) from the DB`);
     }
   }
-  const { resolveUrl } = require("../lib/youtube");
+  const { resolveUrl, httpStatusForYoutubeError } = require("../lib/youtube");
+  const { acquireLockWhenIdle, releaseLock } = require("../lib/refresh");
+  const channelAddLimit = rateLimit({
+    windowMs: 60_000,
+    max: 30,
+    name: "channel addition",
+  });
 
   function save() {
     saveData(appState.dataDir, appState.data);
   }
 
+  async function whileRefreshIdle(action) {
+    const handle = await acquireLockWhenIdle(appState);
+    try {
+      return action();
+    } finally {
+      releaseLock(appState, handle);
+    }
+  }
+
   function summary() {
-    return getFolderTreeSummary(appState.data);
+    const unread = appState.db.getUnreadCounts();
+    const unreadFor = (channelId) => Object.hasOwn(unread, channelId)
+      ? Number(unread[channelId]) || 0
+      : 0;
+    function enrich(summaryFolder, dataFolder) {
+      const children = summaryFolder.children.map((child, index) =>
+        enrich(child, dataFolder.children[index]),
+      );
+      const uniqueChannelIds = new Set();
+      function collect(folder) {
+        for (const channel of folder.channels || []) {
+          if (isResolvedChannel(channel)) uniqueChannelIds.add(channel.id);
+        }
+        for (const child of folder.children || []) collect(child);
+      }
+      collect(dataFolder);
+      return {
+        ...summaryFolder,
+        unreadCount: [...uniqueChannelIds].reduce(
+          (total, channelId) => total + unreadFor(channelId),
+          0,
+        ),
+        children,
+      };
+    }
+    return getFolderTreeSummary(appState.data).map((folder, index) =>
+      enrich(folder, appState.data.folders[index]),
+    );
   }
 
   function validateFolderName(name) {
@@ -40,6 +85,15 @@ module.exports = function (appState) {
     if (name.includes("..") || name.includes("/") || name.includes("\\") || name.includes("\0")) return false;
     if (name.trim().length > 100) return false;
     return true;
+  }
+
+  function resolveFolderId(identifier, res) {
+    const resolved = resolveFolderRouteId(appState.data, identifier);
+    if (resolved.legacyName) {
+      res.setHeader("Deprecation", "true");
+      res.setHeader("Warning", '299 - "Folder-name routes are deprecated; use immutable folder IDs"');
+    }
+    return resolved.id;
   }
 
   // GET /api/folders
@@ -52,11 +106,12 @@ module.exports = function (appState) {
     try {
       const { name, parent } = req.body;
       if (!validateFolderName(name)) return res.status(400).json({ error: "Invalid folder name" });
-      createFolder(appState.data, name.trim(), parent?.trim() || null);
+      const parentId = parent?.trim() ? resolveFolderId(parent.trim(), res) : null;
+      createFolder(appState.data, name.trim(), parentId);
       save();
       res.json({ ok: true, folders: summary() });
     } catch (err) {
-      res.status(400).json({ error: err.message });
+      res.status(httpStatusForYoutubeError(err, 400)).json({ error: err.message });
     }
   });
 
@@ -65,7 +120,7 @@ module.exports = function (appState) {
     try {
       const { newName } = req.body;
       if (!validateFolderName(newName)) return res.status(400).json({ error: "Invalid folder name" });
-      renameFolder(appState.data, req.params.name, newName.trim());
+      renameFolder(appState.data, resolveFolderId(req.params.name, res), newName.trim());
       save();
       res.json({ ok: true, folders: summary() });
     } catch (err) {
@@ -74,55 +129,82 @@ module.exports = function (appState) {
   });
 
   // DELETE /api/folders/:name
-  router.delete("/:name", (req, res) => {
+  router.delete("/:name", async (req, res) => {
     try {
-      deleteFolder(appState.data, req.params.name);
-      save();
-      purgeOrphans();
+      await whileRefreshIdle(() => {
+        deleteFolder(appState.data, resolveFolderId(req.params.name, res));
+        save();
+        purgeOrphans();
+      });
       res.json({ ok: true, folders: summary() });
     } catch (err) {
-      res.status(400).json({ error: err.message });
+      res.status(httpStatusForYoutubeError(err, 400)).json({ error: err.message });
     }
   });
 
   // GET /api/folders/:name/channels
   router.get("/:name/channels", (req, res) => {
     try {
-      const channels = getChannelList(appState.data, req.params.name);
-      res.json(channels);
+      const channels = getChannelList(appState.data, resolveFolderId(req.params.name, res));
+      const unread = appState.db.getUnreadCounts();
+      const unreadFor = (channelId) => Object.hasOwn(unread, channelId)
+        ? Number(unread[channelId]) || 0
+        : 0;
+      const enriched = channels.map((channel) => {
+        const meta = isResolvedChannel(channel)
+          ? appState.db.getChannelMeta(channel.id) || {}
+          : {};
+        return {
+          ...channel,
+          favorite: !!meta.favorite,
+          unreadCount: isResolvedChannel(channel) ? unreadFor(channel.id) : 0,
+          last_checked_at: meta.last_checked_at || null,
+          last_success_at: meta.last_success_at || null,
+          last_refresh_status: meta.last_refresh_status || null,
+          last_error: meta.last_error || null,
+        };
+      }).sort((a, b) => Number(b.favorite) - Number(a.favorite) ||
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+      res.json(enriched);
     } catch (err) {
       res.status(404).json({ error: err.message });
     }
   });
 
   // POST /api/folders/:name/channels — add channel
-  router.post("/:name/channels", async (req, res) => {
+  router.post("/:name/channels", channelAddLimit, async (req, res) => {
     try {
       let { channelId, url } = req.body;
       let channelName;
 
       if (url && !channelId) {
-        const resolved = await resolveUrl(appState.apiKey, url);
+        const resolved = await resolveUrl(appState.apiKey, url, { quota: appState.quota });
         channelId = resolved.channelId;
         channelName = resolved.channelTitle;
       }
 
       if (!channelId) return res.status(400).json({ error: "channelId or url required" });
 
-      addChannel(appState.data, req.params.name, channelId, channelName);
+      const folderId = resolveFolderId(req.params.name, res);
+      addChannel(appState.data, folderId, channelId, channelName);
+      if (!appState.db.getChannelMeta(channelId)) {
+        appState.db.upsertChannel(channelId, channelName || "Unknown");
+      }
       save();
       res.json({ ok: true, channelId, channelName, folders: summary() });
     } catch (err) {
-      res.status(400).json({ error: err.message });
+      res.status(httpStatusForYoutubeError(err, 400)).json({ error: err.message });
     }
   });
 
   // DELETE /api/folders/:name/channels/:channelId
-  router.delete("/:name/channels/:channelId", (req, res) => {
+  router.delete("/:name/channels/:channelId", async (req, res) => {
     try {
-      removeChannel(appState.data, req.params.name, req.params.channelId);
-      save();
-      purgeOrphans();
+      await whileRefreshIdle(() => {
+        removeChannel(appState.data, resolveFolderId(req.params.name, res), req.params.channelId);
+        save();
+        purgeOrphans();
+      });
       res.json({ ok: true, folders: summary() });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -139,7 +221,7 @@ module.exports = function (appState) {
       if (newName.trim().length > 200) {
         return res.status(400).json({ error: "Channel name too long" });
       }
-      renameChannel(appState.data, req.params.name, req.params.channelId, newName.trim());
+      renameChannel(appState.data, resolveFolderId(req.params.name, res), req.params.channelId, newName.trim());
       save();
       res.json({ ok: true, name: newName.trim() });
     } catch (err) {
@@ -154,7 +236,9 @@ module.exports = function (appState) {
       if (!destFolder || typeof destFolder !== "string") {
         return res.status(400).json({ error: "destFolder is required" });
       }
-      moveChannel(appState.data, req.params.name, req.params.channelId, destFolder);
+      const sourceId = resolveFolderId(req.params.name, res);
+      const destinationId = resolveFolderId(destFolder, res);
+      moveChannel(appState.data, sourceId, req.params.channelId, destinationId);
       save();
       res.json({ ok: true, folders: summary() });
     } catch (err) {

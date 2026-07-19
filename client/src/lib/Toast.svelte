@@ -5,12 +5,12 @@
 
   $: if ($toast) {
     clearTimeout(timeout);
-    timeout = setTimeout(() => toast.set(null), 3000);
+    timeout = setTimeout(() => toast.set(null), $toast.durationMs ?? 3000);
   }
 </script>
 
 {#if $toast}
-  <div class="toast"
+  <div class="toast" role="status" aria-live="polite"
        class:success={$toast.type === "success"}
        class:error={$toast.type === "error"}
        class:info={$toast.type === "info"}>

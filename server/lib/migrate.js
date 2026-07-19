@@ -1,5 +1,7 @@
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
+const CHANNEL_ID_RE = /^UC[A-Za-z0-9_-]{22}$/;
 
 const SKIP_KEYS = new Set([
   "ysc_collection", "ysc_meta", "ysc_popup", "ysc_settings", "ysc_statistics",
@@ -27,15 +29,15 @@ function migrate(dataDir) {
 
   // Load cache for channel name enrichment
   const cachePath = path.join(dataDir, "cache.json");
-  let channelNames = {};
+  const channelNames = new Map();
   if (fs.existsSync(cachePath)) {
     try {
       const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
       for (const [cid, entry] of Object.entries(cache.channels || {})) {
         const name = entry.videos?.[0]?.channel;
-        if (name) channelNames[cid] = name;
+        if (name) channelNames.set(cid, name);
       }
-      console.log(`Loaded ${Object.keys(channelNames).length} channel names from cache`);
+      console.log(`Loaded ${channelNames.size} channel names from cache`);
     } catch {
       console.log("Could not read cache for enrichment");
     }
@@ -53,22 +55,27 @@ function migrate(dataDir) {
     }
   }
 
-  function slugify(name) {
-    return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  }
-
   function convertChannels(channelIds) {
-    return channelIds.map((cid) => ({
-      id: cid,
-      name: channelNames[cid] || "Unknown",
-      addedAt: now,
-    }));
+    return channelIds.map((cid) => {
+      if (typeof cid !== "string" || !cid.trim()) {
+        throw new Error("PocketTube export contains a malformed channel reference");
+      }
+      const channel = {
+        id: cid,
+        name: channelNames.get(cid) || "Unknown",
+        addedAt: now,
+      };
+      if (!CHANNEL_ID_RE.test(cid)) {
+        channel.unresolved = true;
+      }
+      return channel;
+    });
   }
 
   function buildFolder(name) {
     const channelIds = ptData[name] || [];
     return {
-      id: slugify(name),
+      id: `folder-${crypto.randomUUID()}`,
       name,
       channels: convertChannels(channelIds),
       children: [],

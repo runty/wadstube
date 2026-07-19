@@ -1,45 +1,58 @@
 require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") });
 
 const express = require("express");
-const cors = require("cors");
 const path = require("path");
-const { loadData, getFolderTreeSummary, syncChannelNames, saveData, collectAllChannelIds, normalizeTubeData } =
+const { loadData, getFolderTreeSummary, syncChannelNames, saveData,
+  allReferencedChannelIds } =
   require("./lib/data");
-const { resolveUrl } = require("./lib/youtube");
+const { resolveUrl, httpStatusForYoutubeError } = require("./lib/youtube");
+const { restoreData } = require("./lib/restore");
+const { securityHeaders, corsOriginPolicy, rateLimit } = require("./lib/security");
 const Db = require("./lib/db");
 const { migrateCacheJsonIfNeeded } = require("./lib/migrate-cache");
+const { loadPolicy } = require("./lib/refresh-policy");
+const { QuotaLedger, parseLimits } = require("./lib/quota");
 
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DB_FILE = path.join(DATA_DIR, "wadstube.db");
 const MAX_VIDEOS = parseInt(process.env.MAX_VIDEOS || "50", 10);
-const REFRESH_INTERVAL_MINUTES = parseInt(
-  process.env.REFRESH_INTERVAL_MINUTES || "30",
-  10,
-);
 const REFRESH_MODE = (process.env.REFRESH_MODE || "rss").toLowerCase();
 const REFRESH_MODE_MANUAL = (process.env.REFRESH_MODE_MANUAL || REFRESH_MODE).toLowerCase();
-const REFRESH_MODE_POLLER = (process.env.REFRESH_MODE_POLLER || REFRESH_MODE).toLowerCase();
 const API_KEY = process.env.YOUTUBE_API_KEY;
+let SMART_REFRESH_POLICY;
+let QUOTA_LIMITS;
+try {
+  SMART_REFRESH_POLICY = loadPolicy();
+  QUOTA_LIMITS = parseLimits();
+} catch (err) {
+  console.error(`Configuration error: ${err.message}`);
+  process.exit(1);
+}
 
-for (const [name, val] of [
-  ["REFRESH_MODE_MANUAL", REFRESH_MODE_MANUAL],
-  ["REFRESH_MODE_POLLER", REFRESH_MODE_POLLER],
-]) {
+for (const [name, val] of [["REFRESH_MODE_MANUAL", REFRESH_MODE_MANUAL]]) {
   if (!["rss", "api"].includes(val)) {
     console.error(`Invalid ${name} "${val}" — use "rss" or "api"`);
     process.exit(1);
   }
 }
 
-if (!API_KEY) {
-  console.error("YOUTUBE_API_KEY is required in .env");
+if (!API_KEY && REFRESH_MODE_MANUAL === "api") {
+  console.error("YOUTUBE_API_KEY is required when a refresh mode is api");
   process.exit(1);
 }
 
 const data = loadData(DATA_DIR);
 const db = new Db(DB_FILE);
 migrateCacheJsonIfNeeded(db, DATA_DIR);
+const purgedStartupOrphans = db.purgeOrphanChannels(allReferencedChannelIds(data));
+if (purgedStartupOrphans) {
+  console.warn(`[startup] purged ${purgedStartupOrphans} orphaned or unresolved DB channel row(s)`);
+}
+const abandonedRuns = db.markAbandonedRefreshRuns();
+if (abandonedRuns) console.warn(`[startup] marked ${abandonedRuns} interrupted refresh run(s) abandoned`);
+db.pruneRefreshRuns();
+const quota = new QuotaLedger(db, { limits: QUOTA_LIMITS });
 
 const appState = {
   data,
@@ -48,11 +61,14 @@ const appState = {
   apiKey: API_KEY,
   maxVideos: MAX_VIDEOS,
   manualMode: REFRESH_MODE_MANUAL,
-  pollerMode: REFRESH_MODE_POLLER,
   refreshLock: null,
+  smartPolicy: SMART_REFRESH_POLICY,
+  refreshIntervalMinutes: 0,
+  quota,
+  activeTasks: new Set(),
 };
 
-console.log(`Refresh mode — manual: ${REFRESH_MODE_MANUAL}, poller: ${REFRESH_MODE_POLLER}`);
+console.log(`Refresh mode — manual only: ${REFRESH_MODE_MANUAL}`);
 
 // Sync channel names from DB into tube.json (no network calls)
 const initialNameUpdates = syncChannelNames(data, db.getChannelNames());
@@ -68,27 +84,51 @@ console.log(`DB: ${stats.channelCount} channels, ${stats.videoCount} videos`);
 
 // Nightly backups (GFS retention: 4 daily + 4 weekly + 4 monthly)
 const { scheduleBackups } = require("./lib/backup");
-scheduleBackups(DATA_DIR, db, appState);
-
-// Background RSS poller (opt-out with REFRESH_INTERVAL_MINUTES=0)
-const { startPoller } = require("./lib/poller");
-startPoller(appState, {
-  intervalMinutes: REFRESH_INTERVAL_MINUTES,
-  collectAllChannelIds,
-  syncChannelNames,
-  saveData,
-});
+const backupController = scheduleBackups(DATA_DIR, db, appState);
 
 // Express app
 const app = express();
-app.use(cors());
+app.disable("x-powered-by");
+if (process.env.TRUST_PROXY) {
+  const value = /^\d+$/.test(process.env.TRUST_PROXY)
+    ? Number(process.env.TRUST_PROXY)
+    : process.env.TRUST_PROXY;
+  app.set("trust proxy", value);
+}
+app.use(securityHeaders);
 // 5 MB is comfortably larger than a realistic tube.json (a 2,400-channel
 // backup is ~300 KB). The default 100 KB silently rejects real restores.
 app.use(express.json({ limit: "5mb" }));
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+app.use(
+  "/api",
+  corsOriginPolicy(allowedOrigins, process.env.PUBLIC_ORIGIN || null),
+);
+app.use(
+  "/api",
+  rateLimit({ windowMs: 60_000, max: 180, name: "API" }),
+);
+app.use(
+  "/api/refresh",
+  rateLimit({ windowMs: 60_000, max: 10, name: "refresh" }),
+);
+app.use(
+  "/api/resolve-url",
+  rateLimit({ windowMs: 60_000, max: 30, name: "URL resolution" }),
+);
+app.use(
+  "/api/restore",
+  rateLimit({ windowMs: 60 * 60_000, max: 5, name: "restore" }),
+);
 
 app.use("/api/folders", require("./routes/folders")(appState));
 app.use("/api/videos", require("./routes/videos")(appState));
+app.use("/api/channels", require("./routes/channels")(appState));
 app.use("/api/refresh", require("./routes/refresh")(appState));
+app.use("/api/status", require("./routes/status")(appState));
 
 // Backup — download tube.json
 app.get("/api/backup", (req, res) => {
@@ -98,34 +138,57 @@ app.get("/api/backup", (req, res) => {
   res.json(appState.data);
 });
 
+// Full export — includes subscriptions plus an integrity-checked consistent
+// SQLite snapshot. Restore remains a controlled offline operation so a bad
+// upload can never replace the live DB.
+app.get("/api/full-backup", async (_req, res) => {
+  const { createFullBackup } = require("./lib/full-backup");
+  let task;
+  task = (async () => {
+    let backup;
+    try {
+      backup = await createFullBackup(DATA_DIR, db, appState);
+      await new Promise((resolve) => {
+        res.download(backup.filePath, backup.filename, (err) => {
+          backup.cleanup();
+          if (err && !res.headersSent) res.status(500).json({ error: err.message });
+          resolve();
+        });
+      });
+    } catch (err) {
+      backup?.cleanup?.();
+      if (!res.headersSent) res.status(500).json({ error: `Full backup failed: ${err.message}` });
+    }
+  })();
+  appState.activeTasks.add(task);
+  try { await task; }
+  finally { appState.activeTasks.delete(task); }
+});
+
 // Restore — upload tube.json
-app.post("/api/restore", (req, res) => {
+app.post("/api/restore", async (req, res) => {
   try {
     const uploaded = req.body;
     if (!uploaded || typeof uploaded !== "object" || !Array.isArray(uploaded.folders)) {
       return res.status(400).json({ error: "Invalid backup file. Must be a tube.json with a folders array." });
     }
 
-    // Deep-normalize the uploaded tree: coerce missing arrays, drop
-    // malformed channels/folders, cap nesting depth, strip prototype keys.
-    const clean = normalizeTubeData(uploaded);
-    if (clean.folders.length === 0 && uploaded.folders.length > 0) {
-      return res.status(400).json({ error: "Backup folders failed validation (bad shape or channel IDs)." });
-    }
+    const result = await restoreData(appState, uploaded);
 
-    const fs = require("fs");
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const backupPath = path.join(DATA_DIR, `tube-pre-restore-${timestamp}.json`);
-    fs.writeFileSync(backupPath, JSON.stringify(appState.data, null, 2), "utf-8");
-    console.log(`Saved pre-restore backup to ${backupPath}`);
-
-    appState.data = clean;
-    saveData(DATA_DIR, appState.data);
-
-    res.json({ ok: true, folders: getFolderTreeSummary(appState.data) });
+    res.json({
+      ok: true,
+      folders: getFolderTreeSummary(appState.data),
+      purgedChannels: result.purgedChannels,
+      normalizationRepairs: result.normalizationRepairs,
+      recoverySnapshot: result.snapshotName,
+    });
   } catch (err) {
     console.error("Restore error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({
+      error: err.message,
+      details: err.details,
+      recoverySnapshot: err.restoreSnapshot,
+    });
   }
 });
 
@@ -134,10 +197,10 @@ app.post("/api/resolve-url", async (req, res) => {
   try {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: "url is required" });
-    const result = await resolveUrl(API_KEY, url);
+    const result = await resolveUrl(API_KEY, url, { quota });
     res.json(result);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(httpStatusForYoutubeError(err, 400)).json({ error: err.message });
   }
 });
 
@@ -148,6 +211,28 @@ app.get("/{*splat}", (req, res) => {
   res.sendFile(path.join(clientDist, "index.html"));
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
+
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[shutdown] ${signal}; stopping schedulers and draining refresh work`);
+  backupController?.stop();
+  const closePromise = new Promise((resolve) => server.close(resolve));
+  const { waitForRefreshDrain, waitForTasksDrain } = require("./lib/shutdown");
+  const drained = await waitForRefreshDrain(appState, 20_000);
+  const tasksDrained = await waitForTasksDrain(appState.activeTasks, 20_000);
+  if (!drained) {
+    console.warn("[shutdown] refresh drain timed out; closing active connections");
+    server.closeAllConnections?.();
+  }
+  if (!tasksDrained) console.warn("[shutdown] backup/export drain timed out");
+  await Promise.race([closePromise, new Promise((resolve) => setTimeout(resolve, 2_000))]);
+  db.close();
+  process.exit(drained && tasksDrained ? 0 : 1);
+}
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+process.once("SIGINT", () => shutdown("SIGINT"));
