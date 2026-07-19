@@ -9,7 +9,7 @@ Self-hosted YouTube subscription manager and video feed viewer. Node.js/Express 
 - **Backend:** Node.js + Express (`server/`)
 - **Frontend:** Svelte built with Vite (`client/`), served as static files by Express
 - **Data:** In the `data/` volume — `tube.json` (folders/channels) and `wadstube.db` (SQLite: channels + videos)
-- **Refresh:** User-initiated only. RSS feeds (`/feeds/videos.xml?channel_id=UC...`) use `If-None-Match`/`If-Modified-Since`; manual refreshes serialize via a single synchronous `tryAcquireLock`/`releaseLock` pair in `server/lib/refresh.js`. Nightly backup waits for any in-flight refresh (`waitForRefreshIdle`) before `VACUUM INTO` so snapshots never race writes.
+- **Refresh:** User-initiated only. RSS feeds (`/feeds/videos.xml?channel_id=UC...`) use `If-None-Match`/`If-Modified-Since`; manual refreshes serialize via a single synchronous `tryAcquireLock`/`releaseLock` pair in `server/lib/refresh.js`. API mode preflights the complete due set and switches the whole run to RSS when the local daily budget cannot cover it. Mid-run structured quota/rate-limit errors trip a shared breaker and route remaining channels through an independent five-request RSS pool. Nightly backup waits for any in-flight refresh (`waitForRefreshIdle`) before `VACUUM INTO` so snapshots never race writes.
 - **Docker:** Multi-stage build (Alpine), health check, 512MB mem limit, `TZ=America/Los_Angeles` baked in so nightly backups and local-day math line up
 
 ## Key files
@@ -18,7 +18,7 @@ Self-hosted YouTube subscription manager and video feed viewer. Node.js/Express 
 - `server/lib/data.js` — Load/save tube.json, folder/channel CRUD, atomic writes
 - `server/lib/db.js` — SQLite wrapper: additive schema migrations, video/reader/refresh/quota state, retention, FTS search, and VACUUM INTO backup
 - `server/lib/rss.js` — Atom feed fetch with conditional headers, XML parsing (`fast-xml-parser`)
-- `server/lib/refresh.js` — Orchestration: RSS → classify new videos as shorts → upsert → prune
+- `server/lib/refresh.js` — Orchestration: RSS/API with quota-aware RSS fallback → classify new videos as shorts → upsert → prune
 - `server/lib/refresh-policy.js` — Smart manual selection: 2h after a refresh finds an upload, 6h after 90 days inactive, 24h after one year inactive
 - `server/lib/frontend.js` — SPA serving policy: no-store HTML, immutable hashed assets, and 404s for stale asset URLs
 - `server/lib/youtube.js` — YT Data API client for URL resolution + `checkIsShort` HEAD helper
@@ -55,6 +55,7 @@ ssh shrimp 'bash ~/wadstube-redeploy.sh'
 - `REFRESH_MODE_MANUAL` — refresh mode for web-button clicks; falls back to `REFRESH_MODE`
 - `SMART_REFRESH_POLICY_JSON` — extensible post-upload cooldown and inactivity thresholds
 - `rss` is free but subject to YouTube's per-IP rate limiter; `api` is 1 quota unit per channel per refresh (1,300 channels permits at most 7 full passes/day on the 10k/day free quota; 6 leaves a useful safety margin)
+- Refresh summaries persist `requested_mode`, `effective_mode`, `rss_fallbacks`, and the first structured `fallback_reason`; `rss_fallbacks` counts redirected channels while `rss_requests` counts all RSS network attempts, including retries
 - `DATA_DIR`, `PORT`, `TZ` — as before
 
 ## Constraints
@@ -63,6 +64,7 @@ ssh shrimp 'bash ~/wadstube-redeploy.sh'
 - RSS returns ~15 newest videos per channel; the 50-video retention fills in over successive user-initiated refreshes
 - Shorts detection is a free HEAD to `youtube.com/shorts/{id}`. Classification is cached; transient `unknown` results use paced retries on later manual refreshes.
 - YouTube Data API is still used at channel-add time for `/@handle` and `/watch?v=...` URLs; each call is 1 unit
+- RSS fallback is restricted to exact structured quota/rate-limit codes. Authentication, forbidden, not-found, and availability failures remain errors.
 - Do NOT add features requiring extra paid API endpoints (view counts, duration) unless explicitly asked
 - Only user-initiated refreshes make channel network requests; concurrent manual refreshes are rejected
 
@@ -87,7 +89,7 @@ ssh shrimp 'bash ~/wadstube-redeploy.sh'
 - `videos(...)` — cached metadata, Shorts classification/retry state, and pending/final return-highlight reason; indexed by channel/published and published
 - `video_state(...)` — watched, starred, and hidden state
 - `api_usage(...)` — Pacific-day quota ledger by bucket and endpoint
-- `refresh_runs(...)` — bounded persistent per-refresh reports
+- `refresh_runs(...)` — bounded persistent per-refresh reports, including requested/effective mode and RSS-fallback count/reason
 - `videos_fts` — FTS5 content index when supported; reads fall back to `LIKE`
 
 Shorts remain stored for deduplication and classification caching but are filtered out of normal video reads.

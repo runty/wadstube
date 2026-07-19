@@ -88,7 +88,7 @@ YouTube's native subscription feed is a single unsorted stream. PocketTube (brow
 
 1. **Page load** — frontend fetches `/api/folders` (folder tree) and shows the sidebar. No videos are loaded until you click a folder.
 2. **Select folder** — frontend fetches `/api/videos?folder=X`, which reads from `wadstube.db` (no network call).
-3. **Refresh** — frontend POSTs to `/api/refresh/:folder`; the server streams NDJSON events back (init, start/done per channel, final summary). Each channel is fetched via RSS or the YouTube Data API depending on `REFRESH_MODE_MANUAL`. New videos are inserted, existing ones have title/description/thumbnail refreshed, and each channel keeps the last `MAX_VIDEOS` visible entries plus a bounded Shorts cache.
+3. **Refresh** — frontend POSTs to `/api/refresh/:folder`; the server streams NDJSON events back (init, start/done per channel, final summary). Each channel is fetched via RSS or the YouTube Data API depending on `REFRESH_MODE_MANUAL`. If API quota cannot cover the selected due set, the run uses RSS; authoritative quota/rate-limit errors during an API run also trip an RSS fallback breaker. New videos are inserted, existing ones have title/description/thumbnail refreshed, and each channel keeps the last `MAX_VIDEOS` visible entries plus a bounded Shorts cache.
 4. **Smart selection** — the manual folder/all request checks stored refresh/upload timestamps and whether the previous successful refresh discovered a new upload. It applies the configured 2-hour post-upload, 6-hour inactive, or 24-hour long-inactive minimum. A direct per-channel retry is an explicit override.
 5. **Add channel** — frontend POSTs a URL to `/api/folders/:id/channels`. Server resolves the URL to a channel ID (via YouTube Data API if needed), adds it to `tube.json`. Name-based identifiers remain accepted for older clients.
 
@@ -123,7 +123,7 @@ Two files in `data/`:
 - `channels(...)` — last-known title, RSS conditional-request hints, favorite flag, separate attempt/success timestamps, newest known upload, and failure state
 - `videos(...)` — cached video metadata, retryable Shorts classification, and durable pending/final return-highlight reason
 - `video_state(video_id PK, watched_at, starred_at, hidden_at, updated_at)` — durable reader state
-- `api_usage(...)` and `refresh_runs(...)` — Pacific-day quota ledger and a bounded history of persistent run reports
+- `api_usage(...)` and `refresh_runs(...)` — Pacific-day quota ledger and a bounded history of persistent run reports, including requested/effective mode and RSS-fallback count/reason
 - `videos_fts` — FTS5 search index, transactionally rebuilt on startup; search falls back to `LIKE` if FTS5 is unavailable
 
 If `cache.json` exists on first boot (from a pre-RSS install), it's imported into the DB once and renamed `cache.json.migrated`.
@@ -153,7 +153,7 @@ Fetches `https://www.youtube.com/feeds/videos.xml?channel_id=UC...`, parses with
 - `checkIsShort(videoId)` — HEAD request to `/shorts/{id}`; returns `short`, `long`, or retryable `unknown`.
 
 #### `server/lib/refresh.js` — Refresh Orchestrator
-`refreshChannels(db, ids, opts, onEvent)` spins up per-channel workers in a `p-limit` pool (5 concurrent in RSS mode, 20 in API mode). Every attempt stores `last_refresh_attempt_at`; only a successful response (`ok` or RSS `304`) advances `last_refreshed_at`, and a feed response advances `latest_upload_at`. Worker failures are isolated and all workers settle before the run finishes or releases its lock. New long-form videos get the strongest matching inactivity-rule ID when the channel had been refreshed before. Unknown Shorts are selected from SQLite and retried with paced backoff even after they fall outside the current RSS window; a pending return badge survives until classification succeeds. Every run persists its API/RSS/Shorts report.
+`refreshChannels(db, ids, opts, onEvent)` spins up per-channel workers in a `p-limit` pool (5 concurrent in RSS mode, 20 in API mode). API quota/rate-limit responses are recognized only by their exact structured error code; they trip a run-wide breaker and redirect the failed and not-yet-started channels through a dedicated five-request RSS pool. Authentication, permission, not-found, and availability errors are not masked. Every attempt stores `last_refresh_attempt_at`; only a successful response (`ok` or RSS `304`) advances `last_refreshed_at`, and a feed response advances `latest_upload_at`. Worker failures are isolated and all workers settle before the run finishes or releases its lock. New long-form videos get the strongest matching inactivity-rule ID when the channel had been refreshed before. Unknown Shorts are selected from SQLite and retried with paced backoff even after they fall outside the current RSS window; a pending return badge survives until classification succeeds. Every run persists its API/RSS/Shorts report.
 
 #### `server/lib/backup.js` — Nightly Backups
 Owns the global refresh lock while staging `tube.json` and a `VACUUM INTO wadstube.db` snapshot for `data/backups/YYYY-MM-DD/` every night at 1 am local time (container `TZ`). The complete pair is published as one directory swap, so a failed snapshot or publication restores the prior pair; retention ignores incomplete staging/directories. Grandfather-Father-Son retention keeps 4 daily + 4 weekly + 4 monthly snapshots and catches up on boot when overdue.
@@ -198,7 +198,7 @@ Both stream NDJSON events (Content-Type `application/x-ndjson`) with one event p
 {"type":"start","channelId":"UC...","channelTitle":"Tom Scott"}
 {"type":"done","channelId":"UC...","channelTitle":"Tom Scott","status":"ok","newVideos":2}
 ...
-{"type":"summary","refreshed":40,"new_videos":57,"errors":2,"total_channels":...,"total_videos":...}
+{"type":"summary","refreshed":40,"new_videos":57,"errors":2,"requested_mode":"api","effective_mode":"api+rss","rss_fallbacks":3,"fallback_reason":"quotaExceeded","api_units":20,"rss_requests":3,"total_channels":...,"total_videos":...}
 ```
 
 If another manual refresh, restore, or backup already owns the lock, the route returns 409 immediately so the client can surface the conflict rather than stall.
@@ -212,7 +212,7 @@ Svelte writable stores cover folders/videos, the active folder/channel, reader v
 Mounts Header, Sidebar, VideoGrid, FolderChannels (modal), Toast, and RefreshProgress. Loads folders on mount.
 
 #### `client/src/lib/Header.svelte` — Top Bar
-Hamburger toggle, title, search with clear, gear menu (backup/restore), refresh button with spinner. The completion toast reports new videos, errors/skips, channels checked, API units used by that refresh, and API units used for the current Pacific quota day.
+Hamburger toggle, title, search with clear, gear menu (backup/restore), refresh button with spinner. The completion toast reports new videos, errors/skips, channels checked, API units used by that refresh, API units used for the current Pacific quota day, and the RSS-fallback channel count when nonzero.
 
 #### `client/src/lib/Sidebar.svelte` — Folder & Channel Navigation
 Recursive folder tree keyed by immutable folder IDs, expandable channels, deduplicated unread counts, favorite toggles, keyboard/touch action menus for folder rename/delete and channel rename/move/remove, drag/drop URL targets, "+ New Folder", and mobile overlay.
@@ -389,7 +389,7 @@ Under YouTube's June 2026 quota model, a project receives 10,000 general quota u
 
 The default is RSS so clicks consume no API quota. Set `REFRESH_MODE_MANUAL=api` for predictable API-backed manual refreshes.
 
-WadsTube reserves quota immediately before every actual Data API request, including requests that return errors. General and `search.list` buckets are stored separately using the Pacific quota day. A full API refresh uses a conservative preflight snapshot and is rejected before starting when the then-remaining general budget cannot cover every selected channel. Per-call reservation is still authoritative: concurrent URL resolutions or other API work can consume that snapshot, so a later channel may stop with a quota error after a run has partially completed. The header and Channel Health panel show what remains, and every refresh report records endpoint calls/units, RSS requests, Shorts probes, the run status/error, and the remaining daily general budget.
+WadsTube reserves quota immediately before every actual Data API request, including requests that return errors. General and `search.list` buckets are stored separately using the Pacific quota day. A full API refresh uses a conservative preflight snapshot; when the remaining general budget cannot cover every selected due channel, the whole run switches to free RSS instead of returning 429 or starting a partial API pass. Per-call reservation is still authoritative: concurrent URL resolutions or other API work can consume that snapshot, so an exact structured quota/rate-limit response during a run trips a shared breaker and the failed plus later channels use RSS. Authentication, forbidden, not-found, and availability errors remain visible errors. The header and Channel Health panel show what remains, and every refresh report records endpoint calls/units, RSS requests, Shorts probes, the run status/error, remaining daily general budget, `requested_mode`, `effective_mode`, `rss_fallbacks`, and `fallback_reason`. `rss_fallbacks` is a channel count; `rss_requests` is a network-attempt count and can be larger when RSS retries occur.
 
 ### Smart refresh policy
 
@@ -442,7 +442,8 @@ Shorts retention/counting, stable folder normalization, PocketTube IDs,
 refresh-coordinated restore/delete behavior, paired recovery snapshots, CORS,
 folder-ID compatibility headers, reader/favorite/health APIs, retry failures and
 rate limits, smart-policy boundaries, return highlighting without initial
-backfill, quota-day/bucket/failure accounting, FTS search, full-export integrity,
+backfill, quota-day/bucket/failure accounting, whole-run and mid-run RSS quota
+fallback, fallback exclusions/concurrency/reporting, FTS search, full-export integrity,
 shutdown draining, and YouTube error handling. The client suite covers channel-cache
 race invalidation, refresh-driven badge reloads, and active-filter cleanup.
 

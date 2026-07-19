@@ -47,10 +47,22 @@ function parseLimits(env = process.env) {
   };
 }
 
-function createRunMetrics({ trigger = "manual", mode = "rss", scope = "all", requestedChannels = 0 } = {}) {
+function createRunMetrics({
+  trigger = "manual",
+  mode = "rss",
+  requestedMode = mode,
+  effectiveMode = mode,
+  fallbackReason = null,
+  scope = "all",
+  requestedChannels = 0,
+} = {}) {
   return {
     trigger,
     mode,
+    requested_mode: requestedMode,
+    effective_mode: effectiveMode,
+    rss_fallbacks: 0,
+    fallback_reason: fallbackReason,
     scope,
     requested_channels: requestedChannels,
     started_at: new Date().toISOString(),

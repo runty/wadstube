@@ -59,6 +59,10 @@ CREATE TABLE IF NOT EXISTS refresh_runs (
   finished_at TEXT,
   trigger TEXT NOT NULL,
   mode TEXT NOT NULL,
+  requested_mode TEXT,
+  effective_mode TEXT,
+  rss_fallbacks INTEGER NOT NULL DEFAULT 0,
+  fallback_reason TEXT,
   scope TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'running',
   requested_channels INTEGER NOT NULL DEFAULT 0,
@@ -194,6 +198,17 @@ class Db {
               WHERE v.channel_id = channels.id
                 AND ABS(julianday(v.created_at) - julianday(channels.last_refreshed_at)) <= (10.0 / 1440.0)
             )
+        `);
+      },
+      () => {
+        addColumn("refresh_runs", "requested_mode", "TEXT");
+        addColumn("refresh_runs", "effective_mode", "TEXT");
+        addColumn("refresh_runs", "rss_fallbacks", "INTEGER NOT NULL DEFAULT 0");
+        addColumn("refresh_runs", "fallback_reason", "TEXT");
+        this.db.exec(`
+          UPDATE refresh_runs
+          SET requested_mode = COALESCE(requested_mode, mode),
+              effective_mode = COALESCE(effective_mode, mode)
         `);
       },
     ];
@@ -707,12 +722,17 @@ class Db {
   startRefreshRun(metrics) {
     const result = this.db.prepare(`
       INSERT INTO refresh_runs
-        (started_at, trigger, mode, scope, requested_channels)
-      VALUES (?, ?, ?, ?, ?)
+        (started_at, trigger, mode, requested_mode, effective_mode,
+         rss_fallbacks, fallback_reason, scope, requested_channels)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       metrics.started_at,
       metrics.trigger,
       metrics.mode,
+      metrics.requested_mode || metrics.mode,
+      metrics.effective_mode || metrics.mode,
+      metrics.rss_fallbacks || 0,
+      metrics.fallback_reason || null,
       metrics.scope,
       metrics.requested_channels,
     );
@@ -726,7 +746,8 @@ class Db {
         new_videos = ?, new_shorts = ?, classification_unknown = ?, errors = ?,
         api_calls = ?, api_units = ?, api_by_endpoint = ?, rss_requests = ?,
         shorts_probes = ?, daily_remaining = ?, pending_unknown_total = ?,
-        pending_unknown_due = ?, pending_reclassified = ?, error = ?
+        pending_unknown_due = ?, pending_reclassified = ?, requested_mode = ?,
+        effective_mode = ?, rss_fallbacks = ?, fallback_reason = ?, error = ?
       WHERE id = ?
     `).run(
       new Date().toISOString(), status, summary.checked || 0, summary.skipped || 0,
@@ -736,7 +757,12 @@ class Db {
       JSON.stringify(metrics.api_by_endpoint || {}), metrics.rss_requests || 0,
       metrics.shorts_probes || 0, dailyRemaining,
       summary.pending_unknown_total || 0, summary.pending_unknown_due || 0,
-      summary.pending_reclassified || 0, error, id,
+      summary.pending_reclassified || 0,
+      metrics.requested_mode || metrics.mode,
+      metrics.effective_mode || metrics.mode,
+      metrics.rss_fallbacks || 0,
+      metrics.fallback_reason || null,
+      error, id,
     );
     this.pruneRefreshRuns();
   }

@@ -5,7 +5,12 @@ module.exports = function (appState) {
   const { getChannelsForFolder, collectAllChannelIds, collectAllChannels, findFolder,
     isResolvedChannel, syncChannelNames, saveData, resolveFolderRouteId } =
     require("../lib/data");
-  const { refreshChannels, tryAcquireLock, releaseLock } = require("../lib/refresh");
+  const {
+    refreshChannels,
+    isRssFallbackErrorCode,
+    tryAcquireLock,
+    releaseLock,
+  } = require("../lib/refresh");
   const { evaluateRefresh } = require("../lib/refresh-policy");
 
   function syncNamesFromDb() {
@@ -17,13 +22,15 @@ module.exports = function (appState) {
     }
   }
 
-  async function runRefresh(channelIds, onEvent, scope = "all", skipped = 0) {
+  async function runRefresh(channelIds, onEvent, scope = "all", skipped = 0, runMode = {}) {
     const summary = await refreshChannels(
       appState.db,
       channelIds,
       {
         keep: appState.maxVideos,
-        mode: appState.manualMode,
+        mode: runMode.mode || appState.manualMode,
+        requestedMode: runMode.requestedMode || appState.manualMode,
+        fallbackReason: runMode.fallbackReason || null,
         apiKey: appState.apiKey,
         quota: appState.quota,
         policy: appState.smartPolicy,
@@ -74,6 +81,7 @@ module.exports = function (appState) {
         onEvent,
         meta.folder || meta.label || "all",
         meta.skipped || 0,
+        meta.runMode,
       );
       console.log(
         `Refresh ${meta.label || "all"} done: ${summary.updated} with updates, ` +
@@ -97,6 +105,10 @@ module.exports = function (appState) {
         api_units: summary.api_units,
         api_by_endpoint: summary.api_by_endpoint,
         rss_requests: summary.rss_requests,
+        requested_mode: summary.requested_mode,
+        effective_mode: summary.effective_mode,
+        rss_fallbacks: summary.rss_fallbacks,
+        fallback_reason: summary.fallback_reason,
         shorts_probes: summary.shorts_probes,
         pending_unknown_total: summary.pending_unknown_total,
         pending_unknown_due: summary.pending_unknown_due,
@@ -124,14 +136,17 @@ module.exports = function (appState) {
     return handle;
   }
 
-  function guardApiBudget(res, count) {
-    if (appState.manualMode !== "api" || !appState.quota) return true;
+  function chooseRunMode(count) {
+    const requestedMode = appState.manualMode;
+    if (requestedMode !== "api" || !appState.quota) {
+      return { requestedMode, mode: requestedMode, fallbackReason: null };
+    }
     try {
       appState.quota.assertCanSpend("general", count);
-      return true;
+      return { requestedMode, mode: requestedMode, fallbackReason: null };
     } catch (err) {
-      res.status(429).json({ error: err.message, quota: appState.quota.status() });
-      return false;
+      if (!isRssFallbackErrorCode(err.code)) throw err;
+      return { requestedMode, mode: "rss", fallbackReason: err.code };
     }
   }
 
@@ -200,9 +215,9 @@ module.exports = function (appState) {
       seedSelectedChannelTitles(allChannels);
       const selected = selectDueChannels(allChannels);
       skipped += selected.skipped;
-      if (!guardApiBudget(res, selected.due.length)) return;
+      const runMode = chooseRunMode(selected.due.length);
       console.log(`Refreshing all: ${selected.due.length} due, ${skipped} skipped`);
-      await streamRefresh(req, res, selected.due, { label: "all", skipped });
+      await streamRefresh(req, res, selected.due, { label: "all", skipped, runMode });
     } finally {
       releaseLock(appState, handle);
     }
@@ -226,13 +241,14 @@ module.exports = function (appState) {
       seedSelectedChannelTitles(channelIds);
       const selected = selectDueChannels(channelIds);
       const totalSkipped = skipped + selected.skipped;
-      if (!guardApiBudget(res, selected.due.length)) return;
+      const runMode = chooseRunMode(selected.due.length);
       console.log(`Refreshing folder "${folder}": ${selected.due.length} due, ${totalSkipped} skipped`);
       await streamRefresh(req, res, selected.due, {
         label: `"${folder}"`,
         folder,
         channelIdsForFolder: channelIds,
         skipped: totalSkipped,
+        runMode,
       });
     } finally {
       releaseLock(appState, handle);

@@ -79,7 +79,7 @@ test("legacy DB migration preserves data and separates visible retention", (t) =
 
   const db = new Db(file);
   t.after(() => db.close());
-  assert.equal(db.db.pragma("user_version", { simple: true }), 8);
+  assert.equal(db.db.pragma("user_version", { simple: true }), 9);
   assert.deepEqual(
     db.db
       .prepare("SELECT video_id, short_status FROM videos ORDER BY video_id")

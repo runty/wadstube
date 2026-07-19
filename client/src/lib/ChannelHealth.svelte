@@ -5,6 +5,7 @@
     retryChannel, deleteChannel, error, toast, quotaStatus, refreshRuns,
     loadQuotaStatus, loadRefreshRuns,
   } from "../stores/feed.js";
+  import { rssFallbackSuffix } from "./refresh-report.js";
 
   let panel;
   let closeButton;
@@ -39,7 +40,7 @@
     try {
       const summary = await retryChannel(channel.id);
       toast.set({
-        message: `Refreshed ${channel.title} · ${summary?.checked ?? 0} channels checked · ${summary?.api_units || 0} API units this refresh · ${summary?.quota?.buckets?.general?.used ?? "?"} API units used today`,
+        message: `Refreshed ${channel.title}${rssFallbackSuffix(summary)} · ${summary?.checked ?? 0} channels checked · ${summary?.api_units || 0} API units this refresh · ${summary?.quota?.buckets?.general?.used ?? "?"} API units used today`,
         type: "success",
         durationMs: 10_000,
       });
@@ -130,10 +131,11 @@
     {#if !$refreshRuns.length}<p class="empty">No refresh history yet.</p>{/if}
     {#each $refreshRuns.slice(0, 10) as run (run.id)}
       <div class="run">
-        <strong>{run.trigger} · {run.mode} · {run.status}</strong>
+        <strong>{run.trigger} · {run.requested_mode || run.mode}{run.effective_mode && run.effective_mode !== (run.requested_mode || run.mode) ? ` → ${run.effective_mode}` : ""} · {run.status}</strong>
         <span>{new Date(run.started_at).toLocaleString()}</span>
         <span>{run.checked} checked · {run.skipped} skipped · {run.new_videos} new · {run.errors} errors</span>
         <span>{run.api_units} API units ({run.api_calls} calls) · {run.rss_requests} RSS · {run.shorts_probes} Shorts probes · {run.daily_remaining ?? "?"} left</span>
+        {#if run.rss_fallbacks > 0}<span>{run.rss_fallbacks} RSS fallback{run.rss_fallbacks === 1 ? "" : "s"}{run.fallback_reason ? ` · ${run.fallback_reason}` : ""}</span>{/if}
         <span>{run.pending_unknown_total || 0} unknown Shorts · {run.pending_reclassified || 0} reclassified</span>
         {#if run.error}<span class="run-error">{run.error}</span>{/if}
       </div>

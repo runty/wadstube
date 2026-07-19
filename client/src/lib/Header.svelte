@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { activeFolder, refreshFolder, refreshing, error, sidebarOpen, searchQuery, toast, showHealth, quotaStatus, loadQuotaStatus, resetAfterSubscriptionImport } from "../stores/feed.js";
   import { setThemeMode, themeMode } from "../stores/theme.js";
+  import { rssFallbackSuffix } from "./refresh-report.js";
 
   let fileInput;
   let showGearMenu = false;
@@ -32,7 +33,7 @@
         : "";
       const report = ` · ${result?.checked ?? 0} channels checked · ${result?.api_units || 0} API units this refresh · ${result?.daily_used ?? "?"} API units used today`;
       toast.set({
-        message: msg + suffix + skippedSuffix + report,
+        message: msg + suffix + skippedSuffix + rssFallbackSuffix(result) + report,
         type: n > 0 ? "success" : "info",
         durationMs: 10_000,
       });

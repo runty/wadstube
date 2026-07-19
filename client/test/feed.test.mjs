@@ -15,6 +15,7 @@ globalThis.history = { pushState() {}, replaceState() {} };
 
 const feed = await import("../src/stores/feed.js");
 const channelDisplay = await import("../src/lib/channel-display.js");
+const refreshReport = await import("../src/lib/refresh-report.js");
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -246,4 +247,17 @@ test("reserved-key folder cache lookups never read or mutate object prototypes",
   assert.equal(Object.hasOwn(cache, "constructor"), true);
   assert.equal(Object.getPrototypeOf(cache), Object.prototype);
   assert.equal(Object.prototype.unresolved, undefined);
+});
+
+test("refresh report mentions RSS fallback only when channels used it", () => {
+  assert.equal(refreshReport.rssFallbackSuffix({ rss_fallbacks: 0 }), "");
+  assert.equal(refreshReport.rssFallbackSuffix({}), "");
+  assert.equal(
+    refreshReport.rssFallbackSuffix({ rss_fallbacks: 1 }),
+    " · 1 channel used RSS fallback",
+  );
+  assert.equal(
+    refreshReport.rssFallbackSuffix({ rss_fallbacks: 3 }),
+    " · 3 channels used RSS fallback",
+  );
 });

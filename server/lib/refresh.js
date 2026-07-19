@@ -13,6 +13,21 @@ const CHANNEL_CONCURRENCY_API = 20;
 // flight and was fine; we match that ceiling with a shared pool.
 const SHORTS_CONCURRENCY = 200;
 
+// Only authoritative, structured YouTube quota/rate-limit reasons may switch
+// a refresh to RSS. Authentication, permissions, not-found, and availability
+// failures remain visible errors instead of being silently masked.
+const RSS_FALLBACK_ERROR_CODES = new Set([
+  "quotabudgetexceeded",
+  "quotaexceeded",
+  "dailylimitexceeded",
+  "ratelimitexceeded",
+  "userratelimitexceeded",
+]);
+
+function isRssFallbackErrorCode(code) {
+  return typeof code === "string" && RSS_FALLBACK_ERROR_CODES.has(code.toLowerCase());
+}
+
 let _pLimit;
 async function getPLimit() {
   if (!_pLimit) _pLimit = (await import("p-limit")).default;
@@ -101,7 +116,7 @@ async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
   const {
     keep = 50, mode = "rss", apiKey = null, quota = null,
     trigger = "manual", scope = "all", policy = null,
-    skipped = 0,
+    skipped = 0, requestedMode = mode, fallbackReason = null,
   } = opts;
   const pendingShortLimit = opts.pendingShortLimit ?? 20;
   if (mode === "api" && !apiKey) {
@@ -109,10 +124,36 @@ async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
   }
   const ids = [...new Set(channelIds)];
   const metrics = opts.metrics || createRunMetrics({
-    trigger, mode, scope, requestedChannels: ids.length + skipped,
+    trigger,
+    mode: requestedMode,
+    requestedMode,
+    effectiveMode: mode,
+    fallbackReason,
+    scope,
+    requestedChannels: ids.length + skipped,
   });
+  metrics.requested_mode ||= requestedMode;
+  metrics.effective_mode ||= mode;
+  metrics.rss_fallbacks ||= 0;
+  metrics.fallback_reason ||= fallbackReason;
   const runId = db.startRefreshRun?.(metrics) || null;
   const finishRun = (summary, status = "complete", error = null) => {
+    if (metrics.requested_mode === "api") {
+      if (mode === "rss") {
+        metrics.effective_mode = "rss";
+      } else if (metrics.rss_fallbacks > 0) {
+        const localBudgetOnly = String(metrics.fallback_reason || "").toLowerCase() ===
+          "quotabudgetexceeded";
+        metrics.effective_mode = metrics.api_calls > 0 ||
+          !localBudgetOnly
+          ? "api+rss"
+          : "rss";
+      } else {
+        metrics.effective_mode = "api";
+      }
+    } else {
+      metrics.effective_mode = "rss";
+    }
     let quotaStatus = null;
     try { quotaStatus = quota?.status() || null; } catch {}
     const dailyRemaining = quotaStatus?.buckets?.general?.remaining ?? null;
@@ -125,6 +166,10 @@ async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
       api_units: metrics.api_units,
       api_by_endpoint: metrics.api_by_endpoint,
       rss_requests: metrics.rss_requests,
+      requested_mode: metrics.requested_mode,
+      effective_mode: metrics.effective_mode,
+      rss_fallbacks: metrics.rss_fallbacks,
+      fallback_reason: metrics.fallback_reason,
       shorts_probes: metrics.shorts_probes,
       daily_remaining: dailyRemaining,
       quota: quotaStatus,
@@ -145,7 +190,20 @@ async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
   const channelConcurrency =
     mode === "api" ? CHANNEL_CONCURRENCY_API : CHANNEL_CONCURRENCY_RSS;
   const channelLimit = pLimit(channelConcurrency);
+  const rssLimit = pLimit(CHANNEL_CONCURRENCY_RSS);
   const shortLimit = pLimit(SHORTS_CONCURRENCY);
+  const apiFallback = {
+    tripped: requestedMode === "api" && mode === "rss" && !!fallbackReason,
+  };
+
+  function fetchRss(id, cached, { fallback = false } = {}) {
+    // This is a channel-routing count, not a successful-response count.
+    // Record the redirect before awaiting RSS so a parser/fetch exception
+    // still produces an accurate run report; rss_requests remains the
+    // lower-level network-attempt counter in rss.js.
+    if (fallback) metrics.rss_fallbacks++;
+    return rssLimit(() => fetchChannelFeed(id, cached, { metrics }));
+  }
 
   let updated = 0;
   let newVideoCount = 0;
@@ -176,12 +234,25 @@ async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
 
     const now = new Date().toISOString();
     db.recordChannelRefreshAttempt?.(id, now);
-    const feed = mode === "api"
-      ? await fetchChannelViaApi(apiKey, id, { quota, metrics })
-      : await fetchChannelFeed(id, {
-          last_etag: meta.last_etag,
-          last_modified: meta.last_modified,
-        }, { metrics });
+    const cached = {
+      last_etag: meta.last_etag,
+      last_modified: meta.last_modified,
+    };
+    let feed;
+    if (mode === "api") {
+      if (apiFallback.tripped) {
+        feed = await fetchRss(id, cached, { fallback: true });
+      } else {
+        feed = await fetchChannelViaApi(apiKey, id, { quota, metrics });
+        if (feed.status === "error" && isRssFallbackErrorCode(feed.errorCode)) {
+          apiFallback.tripped = true;
+          metrics.fallback_reason ||= feed.errorCode;
+          feed = await fetchRss(id, cached, { fallback: true });
+        }
+      }
+    } else {
+      feed = await fetchRss(id, cached, { fallback: requestedMode === "api" });
+    }
 
     if (feed.status === "error") {
       errors++;
@@ -402,6 +473,7 @@ async function waitForRefreshIdle(appState) {
 
 module.exports = {
   refreshChannels,
+  isRssFallbackErrorCode,
   tryAcquireLock,
   acquireLockWhenIdle,
   releaseLock,
