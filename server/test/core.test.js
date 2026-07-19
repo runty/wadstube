@@ -16,6 +16,7 @@ const {
 } = require("../lib/refresh");
 const { restoreData } = require("../lib/restore");
 const { corsOriginPolicy } = require("../lib/security");
+const { mountFrontend } = require("../lib/frontend");
 
 const CHANNEL_A = "UCaaaaaaaaaaaaaaaaaaaaaa";
 const CHANNEL_B = "UCbbbbbbbbbbbbbbbbbbbbbb";
@@ -29,6 +30,39 @@ function tempDir(t) {
 function folder(id, name, channels = [], children = []) {
   return { id, name, channels, children };
 }
+
+test("frontend caching cannot turn a stale bundle into a blank SPA", async (t) => {
+  const clientDist = tempDir(t);
+  fs.mkdirSync(path.join(clientDist, "assets"));
+  fs.writeFileSync(path.join(clientDist, "index.html"), "<!doctype html><div id=\"app\"></div>");
+  fs.writeFileSync(path.join(clientDist, "assets", "index-current.js"), "globalThis.appLoaded = true;");
+
+  const app = express();
+  mountFrontend(app, clientDist);
+  const server = await new Promise((resolve) => {
+    const listening = app.listen(0, "127.0.0.1", () => resolve(listening));
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  let response = await fetch(`${base}/`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+
+  response = await fetch(`${base}/folder/deep-link`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.match(await response.text(), /id="app"/);
+
+  response = await fetch(`${base}/assets/index-current.js`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "public, max-age=31536000, immutable");
+
+  response = await fetch(`${base}/assets/index-old.js`);
+  assert.equal(response.status, 404);
+  assert.match(response.headers.get("content-type"), /^text\/plain/);
+  assert.equal(await response.text(), "Asset not found");
+});
 
 test("legacy DB migration preserves data and separates visible retention", (t) => {
   const dir = tempDir(t);

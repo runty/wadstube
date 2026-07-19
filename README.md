@@ -141,6 +141,9 @@ Manages `tube.json`. Load/save with atomic writes, folder/channel CRUD, recursiv
 #### `server/lib/db.js` — SQLite Wrapper
 `better-sqlite3` in WAL mode. Sequential `user_version` migrations upgrade existing databases without dropping data. The wrapper stores smart-refresh timestamps, reader state, quota usage and refresh runs; uses FTS5 for indexed video search with a safe `LIKE` fallback; and uses `VACUUM INTO` for consistent snapshots.
 
+#### `server/lib/frontend.js` — Frontend Serving
+Serves `index.html` with `Cache-Control: no-store`, hashed bundles with immutable one-year caching, and a real `404` for missing `/assets/*` paths so an open tab cannot receive SPA HTML for a stale JavaScript bundle after deployment.
+
 #### `server/lib/rss.js` — Atom Feed Client
 Fetches `https://www.youtube.com/feeds/videos.xml?channel_id=UC...`, parses with `fast-xml-parser`. Sends `If-None-Match` / `If-Modified-Since` when the DB has them (YouTube doesn't currently emit these, but the code is ready if they turn it on). Retries once with 1s backoff and once more with 3s backoff on 404/5xx, which YouTube throws under per-IP rate pressure.
 
@@ -452,6 +455,7 @@ wadstube/
 │   ├── lib/
 │   │   ├── data.js           # Load/save tube.json, folder/channel CRUD, atomic writes
 │   │   ├── db.js             # SQLite wrapper (schema, upserts, prune, VACUUM INTO)
+│   │   ├── frontend.js       # SPA cache policy and stale-asset handling
 │   │   ├── rss.js            # Atom feed fetch + parse with retry/backoff
 │   │   ├── youtube.js        # Data API client (resolveUrl, fetchChannelViaApi, checkIsShort)
 │   │   ├── refresh.js        # Per-channel refresh orchestrator (RSS/API dispatch)

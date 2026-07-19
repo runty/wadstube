@@ -12,6 +12,7 @@ const Db = require("./lib/db");
 const { migrateCacheJsonIfNeeded } = require("./lib/migrate-cache");
 const { loadPolicy } = require("./lib/refresh-policy");
 const { QuotaLedger, parseLimits } = require("./lib/quota");
+const { mountFrontend } = require("./lib/frontend");
 
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
@@ -206,10 +207,7 @@ app.post("/api/resolve-url", async (req, res) => {
 
 // Serve Svelte frontend
 const clientDist = path.join(__dirname, "..", "client", "dist");
-app.use(express.static(clientDist));
-app.get("/{*splat}", (req, res) => {
-  res.sendFile(path.join(clientDist, "index.html"));
-});
+mountFrontend(app, clientDist);
 
 const server = app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

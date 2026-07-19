@@ -20,6 +20,7 @@ Self-hosted YouTube subscription manager and video feed viewer. Node.js/Express 
 - `server/lib/rss.js` — Atom feed fetch with conditional headers, XML parsing (`fast-xml-parser`)
 - `server/lib/refresh.js` — Orchestration: RSS → classify new videos as shorts → upsert → prune
 - `server/lib/refresh-policy.js` — Smart manual selection: 2h after a refresh finds an upload, 6h after 90 days inactive, 24h after one year inactive
+- `server/lib/frontend.js` — SPA serving policy: no-store HTML, immutable hashed assets, and 404s for stale asset URLs
 - `server/lib/youtube.js` — YT Data API client for URL resolution + `checkIsShort` HEAD helper
 - `server/lib/migrate.js` — One-time PocketTube → tube.json migration
 - `server/lib/migrate-cache.js` — One-time cache.json → SQLite migration (fires if DB is empty and cache.json exists)
