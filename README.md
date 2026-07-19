@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="client/public/wads.png" alt="WadsTube logo" width="512">
+</p>
+
 # WadsTube
 
 A self-hosted YouTube subscription manager and video feed viewer. Organizes your YouTube subscriptions into folders, pulls new videos via channel RSS feeds (or the YouTube Data API — your choice), stores them in SQLite, and presents them in a clean, themed web interface. Runs in Docker.
