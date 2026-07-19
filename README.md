@@ -15,7 +15,7 @@ YouTube's native subscription feed is a single unsorted stream. PocketTube (brow
 - **Reader state** — mark videos watched/unread, star them, or hide/restore them. State is stored in SQLite and shared across devices.
 - **Reader views** — all, unread, starred, and hidden views; favorite-channel filtering; newest/oldest/favorites-first/returns-first sorting; grid, compact, and list layouts.
 - **Persistent navigation** — folder, channel, search, reader view, favorites, sort, and density are encoded in the URL for reloads and browser back/forward.
-- **Refresh health** — inspect each channel's last attempt, latest error, stale status, and retry one channel directly.
+- **Refresh health** — inspect each channel's last attempt, latest error, and stale status; retry it immediately or delete it from every folder.
 - **Manual-only refresh** — WadsTube makes no automatic channel requests; every refresh starts from a user click
 - **RSS or API refresh** — RSS is free; user-initiated refreshes can instead use the YouTube Data API when RSS is rate-limited
 - **Smart refresh selection** — a user-initiated folder/all refresh waits 2 hours after a refresh that found a new upload, and skips inactive channels until their configured minimum has elapsed (6 h after 90 days, 24 h after 365 days by default)
@@ -178,6 +178,7 @@ Routes resolve immutable IDs first. An exact, unique legacy folder name remains 
 #### `server/routes/channels.js` — Channel Preference & Health API
 - `GET /api/channels?status=error|stale` — refresh-health rows
 - `PATCH /api/channels/:channelId` — update the favorite flag
+- `DELETE /api/channels/:channelId` — remove a channel from every folder and purge its cached data
 - `POST /api/channels/:channelId/refresh` — retry one subscribed channel
 
 #### `server/routes/refresh.js` — Refresh API (streaming NDJSON)
@@ -462,7 +463,7 @@ wadstube/
 │   └── routes/
 │       ├── folders.js        # Folder CRUD + channel management endpoints
 │       ├── videos.js         # Video listing from the DB
-│       ├── channels.js       # Favorites, health, single-channel retry
+│       ├── channels.js       # Favorites, health, single-channel retry/delete
 │       ├── status.js         # Quota and refresh-run status
 │       └── refresh.js        # Streaming NDJSON refresh endpoints
 ├── client/

@@ -25,6 +25,7 @@ Self-hosted YouTube subscription manager and video feed viewer. Node.js/Express 
 - `server/lib/migrate-cache.js` — One-time cache.json → SQLite migration (fires if DB is empty and cache.json exists)
 - `server/lib/backup.js` — Nightly backups of tube.json + `VACUUM INTO` snapshot of wadstube.db, GFS retention (4 daily + 4 weekly + 4 monthly); fires at 1am container-local time
 - `server/routes/folders.js` — Folder/channel CRUD (create, rename, delete folders; add, remove, rename, move channels), input validation
+- `server/routes/channels.js` — Channel health, favorites, single-channel retry, and global channel deletion
 - `server/routes/videos.js` — Video listing from DB (no network)
 - `server/routes/refresh.js` — user-initiated RSS/API refresh (all or per-folder); applies smart inactivity intervals
 - `client/src/stores/feed.js` — Svelte stores (including `activeChannelId` for per-channel filter) + API client functions

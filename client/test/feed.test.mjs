@@ -116,6 +116,35 @@ test("deleting a folder clears the active channel", async () => {
   assert.equal(get(feed.activeChannelId), null);
 });
 
+test("deleting a channel from health removes every cached membership and clears its filter", async () => {
+  feed.clearChannelLists();
+  feed.activeFolder.set("folder-a");
+  feed.activeChannelId.set("channel-a");
+  feed.channelLists.set({
+    "folder-a": [{ id: "channel-a" }],
+    "folder-b": [{ id: "channel-a" }],
+  });
+  feed.channelHealth.set([{ id: "channel-a", title: "Channel A" }]);
+  globalThis.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === "/api/channels/channel-a" && options.method === "DELETE") {
+      return json({ ok: true, removedMemberships: 2 });
+    }
+    if (value === "/api/folders") return json([]);
+    if (value === "/api/folders/folder-a/channels" || value === "/api/folders/folder-b/channels") return json([]);
+    if (value.startsWith("/api/channels?")) return json([]);
+    if (value.startsWith("/api/videos")) return json({ videos: [], hasMore: false });
+    throw new Error(`Unexpected fetch ${value}`);
+  };
+
+  const result = await feed.deleteChannel("channel-a");
+  assert.equal(result.removedMemberships, 2);
+  assert.equal(result.reloadFailures, 0);
+  assert.equal(get(feed.activeChannelId), null);
+  assert.deepEqual(get(feed.channelHealth), []);
+  assert.deepEqual(get(feed.channelLists), { "folder-a": [], "folder-b": [] });
+});
+
 test("subscription import reset clears stale navigation and reloads feed", async () => {
   feed.activeFolder.set("folder-old");
   feed.activeChannelId.set("channel-old");

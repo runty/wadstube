@@ -397,6 +397,23 @@ function removeChannel(data, folderName, channelId) {
   folder.channels = folder.channels.filter((ch) => ch.id !== channelId);
 }
 
+// Remove every membership for a channel, including memberships nested in
+// child folders. Channel health is global rather than folder-scoped, so its
+// delete action uses this instead of requiring the user to find each copy.
+function removeChannelEverywhere(data, channelId) {
+  let removed = 0;
+  function walk(folders) {
+    for (const folder of folders || []) {
+      const before = folder.channels.length;
+      folder.channels = folder.channels.filter((channel) => channel.id !== channelId);
+      removed += before - folder.channels.length;
+      walk(folder.children);
+    }
+  }
+  walk(data.folders);
+  return removed;
+}
+
 function getChannelList(data, folderName) {
   const folder = findFolder(data.folders, folderName);
   if (!folder) throw new Error(`Folder "${folderName}" not found`);
@@ -487,6 +504,7 @@ module.exports = {
   deleteFolder,
   addChannel,
   removeChannel,
+  removeChannelEverywhere,
   getChannelList,
   syncChannelNames,
   renameChannel,

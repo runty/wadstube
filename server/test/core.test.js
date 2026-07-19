@@ -162,7 +162,7 @@ test("reader and channel preference APIs expose durable state", async (t) => {
     folder("folder-never", "Never", [{ id: CHANNEL_B, name: "Never refreshed", addedAt: "2026-01-01" }]),
   ]), folder("folder-empty", "Empty")] };
   const appState = {
-    data, db, maxVideos: 50, manualMode: "rss", apiKey: null, refreshLock: null,
+    data, dataDir: dir, db, maxVideos: 50, manualMode: "rss", apiKey: null, refreshLock: null,
     refreshChannels: async () => {
       db.updateChannelHealth(CHANNEL_A, { status: "error", error: "exact retry failure", checkedAt: new Date().toISOString() });
       return { checked: 1, updated: 0, new_videos: 0, errors: 1 };
@@ -229,6 +229,15 @@ test("reader and channel preference APIs expose durable state", async (t) => {
     assert.equal((await fetch(`${base}/channels/${CHANNEL_A}/refresh`, { method: "POST" })).status, 502);
   }
   assert.equal((await fetch(`${base}/channels/${CHANNEL_A}/refresh`, { method: "POST" })).status, 429);
+
+  response = await fetch(`${base}/channels/${CHANNEL_A}`, { method: "DELETE" });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).removedMemberships, 2);
+  assert.equal(dataLib.allReferencedChannelIds(data).has(CHANNEL_A), false);
+  assert.equal(db.getChannelMeta(CHANNEL_A), null);
+  assert.equal(db.queryVideos({}).some((video) => video.channel_id === CHANNEL_A), false);
+  assert.equal(dataLib.allReferencedChannelIds(dataLib.loadData(dir)).has(CHANNEL_A), false,
+    "global channel deletion persists to tube.json");
 });
 
 test("unresolved subscriptions stay visible and manageable without entering DB health", async (t) => {

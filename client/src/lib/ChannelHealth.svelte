@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import {
     channelHealth, healthFilter, showHealth, loadChannelHealth,
-    retryChannel, error, toast, quotaStatus, refreshRuns,
+    retryChannel, deleteChannel, error, toast, quotaStatus, refreshRuns,
     loadQuotaStatus, loadRefreshRuns,
   } from "../stores/feed.js";
 
@@ -10,6 +10,7 @@
   let closeButton;
   let previouslyFocused;
   let retrying = null;
+  let deleting = null;
 
   onMount(() => {
     previouslyFocused = document.activeElement;
@@ -47,6 +48,18 @@
       loadChannelHealth($healthFilter).catch(() => {});
     }
     finally { retrying = null; }
+  }
+  async function remove(channel) {
+    if (!confirm(`Delete ${channel.title} from every folder? Its cached videos and channel refresh state will also be removed.`)) return;
+    deleting = channel.id;
+    try {
+      await deleteChannel(channel.id);
+      toast.set({ message: `Deleted ${channel.title} from all folders`, type: "success" });
+    } catch (err) {
+      error.set(err.message);
+    } finally {
+      deleting = null;
+    }
   }
   function age(value) {
     if (!value) return "Never";
@@ -101,9 +114,14 @@
           {#if channel.smart_refresh?.rule}<span>{channel.smart_refresh.rule.label}</span>{/if}
         </div>
         {#if channel.last_error}<p class="err">{channel.last_error}</p>{/if}
-        <button on:click={() => retry(channel)} disabled={retrying === channel.id}>
-          {retrying === channel.id ? "Refreshing…" : "Retry now"}
-        </button>
+        <div class="actions">
+          <button on:click={() => retry(channel)} disabled={retrying === channel.id || deleting === channel.id}>
+            {retrying === channel.id ? "Refreshing…" : "Retry now"}
+          </button>
+          <button class="delete" on:click={() => remove(channel)} disabled={retrying === channel.id || deleting === channel.id}>
+            {deleting === channel.id ? "Deleting…" : "Delete"}
+          </button>
+        </div>
       </article>
     {/each}
   </div>
@@ -135,11 +153,13 @@
   .rows { overflow: auto; padding: 10px; }
   .quota { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 10px 18px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: .78rem; }
   .quota strong { color: var(--heading); }
-  article { position: relative; padding: 12px 110px 12px 12px; border-bottom: 1px solid var(--border); min-height: 70px; }
+  article { position: relative; padding: 12px 195px 12px 12px; border-bottom: 1px solid var(--border); min-height: 70px; }
   article.error-row { border-left: 3px solid var(--danger); }
-  article button { position: absolute; right: 10px; top: 16px; cursor: pointer; }
+  .actions { position: absolute; right: 10px; top: 16px; display: flex; gap: 6px; }
+  article button { cursor: pointer; }
+  article button.delete { color: var(--danger); border-color: var(--danger); }
   .name { color: var(--heading); font-weight: 700; }
-  .meta { display: flex; gap: 12px; color: var(--text-muted); font-size: .78rem; }
+  .meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--text-muted); font-size: .78rem; }
   .err { color: var(--danger); font-size: .78rem; overflow-wrap: anywhere; }
   .empty { text-align: center; color: var(--text-muted); padding: 40px; }
   .history { padding: 12px 18px; border-top: 1px solid var(--border); max-height: 220px; overflow: auto; }
@@ -147,4 +167,8 @@
   .run { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 7px 0; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: .74rem; }
   .run strong { color: var(--heading); }
   .run-error { grid-column: 1 / -1; color: var(--danger); overflow-wrap: anywhere; }
+  @media (max-width: 620px) {
+    article { padding-right: 12px; padding-bottom: 54px; }
+    .actions { top: auto; bottom: 10px; }
+  }
 </style>

@@ -2,8 +2,19 @@ const express = require("express");
 
 module.exports = function channelsRoutes(appState) {
   const router = express.Router();
-  const { collectAllChannelIds, isResolvedChannel, CHANNEL_ID_RE } = require("../lib/data");
-  const { refreshChannels, tryAcquireLock, releaseLock } = require("../lib/refresh");
+  const {
+    collectAllChannelIds,
+    isResolvedChannel,
+    removeChannelEverywhere,
+    saveData,
+    CHANNEL_ID_RE,
+  } = require("../lib/data");
+  const {
+    refreshChannels,
+    acquireLockWhenIdle,
+    tryAcquireLock,
+    releaseLock,
+  } = require("../lib/refresh");
   const { rateLimit } = require("../lib/security");
   const { evaluateRefresh } = require("../lib/refresh-policy");
   const runRefresh = appState.refreshChannels || refreshChannels;
@@ -70,6 +81,26 @@ module.exports = function channelsRoutes(appState) {
       res.json({ ok: true, channel: { ...channel, favorite: !!channel.favorite } });
     } catch (err) {
       res.status(/not found/i.test(err.message) ? 404 : 400).json({ error: err.message });
+    }
+  });
+
+  router.delete("/:channelId", async (req, res) => {
+    if (!CHANNEL_ID_RE.test(req.params.channelId)) {
+      return res.status(400).json({ error: "Invalid YouTube channel ID" });
+    }
+    const handle = await acquireLockWhenIdle(appState);
+    try {
+      const removedMemberships = removeChannelEverywhere(appState.data, req.params.channelId);
+      if (!removedMemberships) {
+        return res.status(404).json({ error: "Channel is not subscribed" });
+      }
+      saveData(appState.dataDir, appState.data);
+      appState.db.removeChannel(req.params.channelId);
+      res.json({ ok: true, removedMemberships });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    } finally {
+      releaseLock(appState, handle);
     }
   });
 

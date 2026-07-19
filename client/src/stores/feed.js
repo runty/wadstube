@@ -386,6 +386,27 @@ export async function retryChannel(channelId) {
   return summary;
 }
 
+export async function deleteChannel(channelId) {
+  const resp = await fetch(`${API}/api/channels/${encodeURIComponent(channelId)}`, {
+    method: "DELETE",
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || "Failed to delete channel");
+
+  if (get(activeChannelId) === channelId) activeChannelId.set(null);
+  channelHealth.update((rows) => rows.filter((channel) => channel.id !== channelId));
+  const results = await Promise.allSettled([
+    loadFolders(),
+    reloadCachedChannelLists(),
+    loadChannelHealth(),
+    loadVideos(get(activeFolder), {
+      channelId: get(activeChannelId), q: get(searchQuery), view: get(viewFilter),
+      favorites: get(favoritesOnly), sort: get(sortOrder),
+    }),
+  ]);
+  return { ...data, reloadFailures: results.filter((result) => result.status === "rejected").length };
+}
+
 export function initializeUrlState() {
   const params = new URLSearchParams(window.location.search);
   activeFolder.set(params.get("folder") || "__all__");
