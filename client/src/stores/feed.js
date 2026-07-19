@@ -75,7 +75,7 @@ let _loadSeq = 0;
 const _currentQuery = { folder: null, channelId: null, q: null };
 let _abortController;
 
-function buildVideosUrl({ folder, channelId, q, before, beforeId, beforeFavorite, view, favorites, sort }) {
+function buildVideosUrl({ folder, channelId, q, before, beforeId, beforeFavorite, beforeReturning, view, favorites, sort }) {
   const params = new URLSearchParams();
   if (folder && folder !== "__all__") params.set("folder", folder);
   if (channelId) params.set("channel", channelId);
@@ -83,6 +83,7 @@ function buildVideosUrl({ folder, channelId, q, before, beforeId, beforeFavorite
   if (before) params.set("before", before);
   if (beforeId) params.set("before_id", beforeId);
   if (beforeFavorite) params.set("before_favorite", "1");
+  if (beforeReturning) params.set("before_returning", "1");
   if (view && view !== "all") params.set("view", view);
   if (favorites) params.set("favorites", "1");
   if (sort && sort !== "newest") params.set("sort", sort);
@@ -131,10 +132,11 @@ export async function loadMoreVideos() {
   const before = tail.published;
   const beforeId = tail.video_id;
   const beforeFavorite = tail.channel_favorite;
+  const beforeReturning = !!tail.highlight_reason;
   loadingMore.set(true);
   const seq = _loadSeq;
   try {
-    const resp = await fetch(buildVideosUrl({ ..._currentQuery, before, beforeId, beforeFavorite }));
+    const resp = await fetch(buildVideosUrl({ ..._currentQuery, before, beforeId, beforeFavorite, beforeReturning }));
     if (!resp.ok) throw new Error(`Failed to load more (${resp.status})`);
     const data = await resp.json();
     // Abandon the page if the user has changed filters in the meantime.
@@ -392,7 +394,7 @@ export function initializeUrlState() {
   viewFilter.set(["all", "unread", "starred", "hidden"].includes(params.get("view")) ? params.get("view") : "all");
   favoritesOnly.set(params.get("favorites") === "1");
   density.set(["grid", "compact", "list"].includes(params.get("density")) ? params.get("density") : "grid");
-  sortOrder.set(["newest", "oldest", "favorite"].includes(params.get("sort")) ? params.get("sort") : "newest");
+  sortOrder.set(["newest", "oldest", "favorite", "returning"].includes(params.get("sort")) ? params.get("sort") : "newest");
 }
 
 let _urlSyncStarted = false;

@@ -112,6 +112,7 @@
         <option value="newest">Newest</option>
         <option value="oldest">Oldest</option>
         <option value="favorite">Favorites first</option>
+        <option value="returning">Returns first</option>
       </select>
     </label>
     <div class="density" role="group" aria-label="Card density">

@@ -13,7 +13,7 @@ YouTube's native subscription feed is a single unsorted stream. PocketTube (brow
 - **Channel management** — manage channels from each folder, rename/remove them from the sidebar, and mark favorite channels with a star. A rename sticks across later refreshes.
 - **Legacy subscription quarantine** — old URL-style subscription IDs remain in their original folders as visible “Needs resolution” entries; they can be renamed, moved, or removed but never enter refresh, quota, unread, or database-health paths.
 - **Reader state** — mark videos watched/unread, star them, or hide/restore them. State is stored in SQLite and shared across devices.
-- **Reader views** — all, unread, starred, and hidden views; favorite-channel filtering; newest/oldest/favorites-first sorting; grid, compact, and list layouts.
+- **Reader views** — all, unread, starred, and hidden views; favorite-channel filtering; newest/oldest/favorites-first/returns-first sorting; grid, compact, and list layouts.
 - **Persistent navigation** — folder, channel, search, reader view, favorites, sort, and density are encoded in the URL for reloads and browser back/forward.
 - **Refresh health** — inspect each channel's last attempt, latest error, stale status, and retry one channel directly.
 - **Manual-only refresh** — WadsTube makes no automatic channel requests; every refresh starts from a user click
@@ -210,7 +210,7 @@ Hamburger toggle, title, search with clear, gear menu (backup/restore), refresh 
 Recursive folder tree keyed by immutable folder IDs, expandable channels, deduplicated unread counts, favorite toggles, keyboard/touch action menus for folder rename/delete and channel rename/move/remove, drag/drop URL targets, "+ New Folder", and mobile overlay.
 
 #### `client/src/lib/VideoGrid.svelte` — Video Display
-Server-filtered reader view with all/unread/starred/hidden and favorite-channel controls, newest/oldest/favorite ordering, infinite scroll, and grid/compact/list density.
+Server-filtered reader view with all/unread/starred/hidden and favorite-channel controls, newest/oldest/favorite/return ordering, infinite scroll, and grid/compact/list density. **Returns first** promotes red-bordered return uploads and keeps each group newest-first.
 
 #### `client/src/lib/VideoCard.svelte` — Single Video
 Native video and channel links, thumbnail/title/description/date, watched/starred/hidden/copy actions, favorite-channel marker, and a return badge when `highlight_reason` is present.

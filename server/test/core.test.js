@@ -108,6 +108,7 @@ test("reader state, favorites, highlights, and health survive additive migration
   db.upsertVideos([
     { video_id: "reader-a", channel_id: CHANNEL_A, title: "A", published: "2026-01-02", short_status: "long" },
     { video_id: "reader-b", channel_id: CHANNEL_B, title: "B", published: "2026-01-01", short_status: "long" },
+    { video_id: "reader-c", channel_id: CHANNEL_B, title: "C", published: "2026-01-03", short_status: "long" },
   ]);
   db.db.prepare("UPDATE videos SET highlight_reason = ? WHERE video_id = ?").run("returned after 1 year", "reader-a");
 
@@ -126,6 +127,19 @@ test("reader state, favorites, highlights, and health survive additive migration
   const starred = db.queryVideos({ view: "starred" });
   assert.equal(starred[0].highlight_reason, "returned after 1 year");
   assert.equal(starred[0].channel_favorite, true);
+
+  const returnsFirst = db.queryVideos({ sort: "returning", limit: 10 });
+  assert.deepEqual(returnsFirst.map((row) => row.video_id), ["reader-a", "reader-c", "reader-b"]);
+  const returnsPage = db.queryVideos({ sort: "returning", limit: 1 });
+  const returnsTail = returnsPage[0];
+  const returnsNextPage = db.queryVideos({
+    sort: "returning",
+    before: returnsTail.published,
+    beforeId: returnsTail.video_id,
+    beforeReturning: !!returnsTail.highlight_reason,
+    limit: 10,
+  });
+  assert.deepEqual(returnsNextPage.map((row) => row.video_id), ["reader-c", "reader-b"]);
 
   state = db.setVideoState("reader-a", { watched_at: false, hidden_at: true });
   assert.equal(state.watched, false);

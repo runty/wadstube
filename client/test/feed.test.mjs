@@ -23,6 +23,14 @@ function json(data, status = 200) {
   });
 }
 
+test("return-first sort is restored from the URL", () => {
+  loc.search = "?sort=returning";
+  feed.initializeUrlState();
+  assert.equal(get(feed.sortOrder), "returning");
+  loc.search = "";
+  feed.sortOrder.set("newest");
+});
+
 test("cleared and superseded channel loads cannot repopulate stale cache", async () => {
   feed.clearChannelLists();
   const pending = [];

@@ -575,7 +575,7 @@ class Db {
   // full-text-ish search, composite keyset pagination (before + before_id
   // for the next page — both needed so ties on `published` don't skip
   // rows), and a hard limit.
-  queryVideos({ channelIds, channelId, q, before, beforeId, beforeFavorite, limit, view, favorites, sort } = {}) {
+  queryVideos({ channelIds, channelId, q, before, beforeId, beforeFavorite, beforeReturning, limit, view, favorites, sort } = {}) {
     const wheres = ["v.short_status != 'short'"];
     const params = [];
 
@@ -609,6 +609,12 @@ class Db {
       const op = sort === "oldest" ? ">" : "<";
       wheres.push(`(c.favorite < ? OR (c.favorite = ? AND (v.published ${op} ? OR (v.published = ? AND v.video_id ${op} ?))))`);
       params.push(beforeFavorite ? 1 : 0, beforeFavorite ? 1 : 0, before, before, beforeId);
+    } else if (before && beforeId && sort === "returning") {
+      const returning = beforeReturning ? 1 : 0;
+      wheres.push(`((v.highlight_reason IS NOT NULL) < ? OR
+        ((v.highlight_reason IS NOT NULL) = ? AND
+          (v.published < ? OR (v.published = ? AND v.video_id < ?))))`);
+      params.push(returning, returning, before, before, beforeId);
     } else if (before && beforeId) {
       // Tiebreak on video_id when multiple rows share `published`.
       const op = sort === "oldest" ? ">" : "<";
@@ -630,7 +636,8 @@ class Db {
        LEFT JOIN channels c ON c.id = v.channel_id
        LEFT JOIN video_state s ON s.video_id = v.video_id
        WHERE ${wheres.join(" AND ")}
-       ORDER BY ${favorites || sort === "favorite" ? "c.favorite DESC, " : ""}
+       ORDER BY ${sort === "returning" ? "(v.highlight_reason IS NOT NULL) DESC, " : ""}
+                ${favorites || sort === "favorite" ? "c.favorite DESC, " : ""}
                 v.published ${sort === "oldest" ? "ASC" : "DESC"},
                 v.video_id ${sort === "oldest" ? "ASC" : "DESC"}
        LIMIT ?`;

@@ -27,11 +27,12 @@ module.exports = function (appState) {
     const before = req.query.before || undefined;
     const beforeId = req.query.before_id || undefined;
     const beforeFavorite = req.query.before_favorite === "1" ? 1 : 0;
+    const beforeReturning = req.query.before_returning === "1" ? 1 : 0;
     const view = ["all", "unread", "starred", "hidden"].includes(req.query.view)
       ? req.query.view
       : "all";
     const favorites = req.query.favorites === "1";
-    const sort = ["newest", "oldest", "favorite"].includes(req.query.sort)
+    const sort = ["newest", "oldest", "favorite", "returning"].includes(req.query.sort)
       ? req.query.sort
       : "newest";
     const limit = Math.min(
@@ -60,6 +61,7 @@ module.exports = function (appState) {
       before,
       beforeId,
       beforeFavorite,
+      beforeReturning,
       view,
       favorites,
       sort,

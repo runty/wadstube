@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Vite prints the local development URL. Application navigation state—folder, channel, search, reader view, favorite filter, sort, and card density—is stored in the URL so reload and browser history work normally.
+Vite prints the local development URL. Application navigation state—folder, channel, search, reader view, favorite filter, sort (including **Returns first**), and card density—is stored in the URL so reload and browser history work normally.
 
 ## Validation
 
