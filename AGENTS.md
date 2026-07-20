@@ -3,10 +3,12 @@
 ## Project overview
 
 Self-hosted YouTube subscription manager and video feed viewer. The backend is
-Node.js/Express, the frontend is Svelte, and production runs in Docker. Folder
-memberships live in `tube.json`; videos and operational state live in SQLite
-(`wadstube.db`). Refresh uses free YouTube RSS by default. The YouTube Data API
-is used for URL/handle resolution and optional user-initiated API refreshes.
+Node.js/Express, the frontend is Svelte, and the portable deployment runs in
+Docker. The maintainer's Shrimp production instance is a native NixOS package.
+Folder memberships live in `tube.json`; videos and operational state live in
+SQLite (`wadstube.db`). Refresh uses free YouTube RSS by default. The YouTube
+Data API is used for URL/handle resolution and optional user-initiated API
+refreshes.
 
 ## Architecture
 
@@ -73,15 +75,15 @@ is used for URL/handle resolution and optional user-initiated API refreshes.
 ## Commands
 
 ```bash
-# Docker (production)
+# Docker
 docker compose up --build -d
 
 # Local dev
 cd server && node index.js &
 cd client && npm run dev
 
-# Deploy to production server
-ssh shrimp 'bash ~/wadstube-redeploy.sh'
+# Maintainer deployment to Shrimp
+# Follow DEPLOYMENT.md; the old ~/wadstube-redeploy.sh path is obsolete.
 ```
 
 ## Environment

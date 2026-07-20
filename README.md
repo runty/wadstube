@@ -5,9 +5,25 @@
 A self-hosted YouTube subscription manager and video feed viewer. Organizes your
 YouTube subscriptions into folders, pulls new videos via channel RSS feeds (or
 the YouTube Data API — your choice), stores them in SQLite, and presents them in
-a clean, themed web interface. Runs in Docker.
+a clean, themed web interface. Docker is the portable deployment path; the
+maintainer's Shrimp instance is packaged natively by NixOS.
 
-## What's new
+## Documentation
+
+- [Quick start](#quick-start) — start a fresh Docker installation
+- [Usage](#usage) — feeds, refreshes, channel management, and operations
+- [Refresh modes and quota](#refresh-modes--quota) — RSS/API behavior and smart
+  scheduling
+- [Architecture](#architecture) — data flow, storage, API, and source tour
+- [Deployment guide](DEPLOYMENT.md) — Docker and the native Shrimp release path
+- [Changelog](CHANGELOG.md) — release history, including version 2.2
+- [Client development](client/README.md) — frontend development and validation
+
+## What's new in 2.2
+
+- Phone and tablet layouts now use the full dynamic viewport. Search remains
+  usable in landscape, and sidebar, channel, health, modal, and operations
+  lists have explicit touch-friendly scrolling.
 
 - Refresh now opens a read-only preview showing the exact folder scope, due and
   skipped counts/reasons, effective mode, and quota required before any network
@@ -31,6 +47,22 @@ a clean, themed web interface. Runs in Docker.
   not hide authentication, permission, not-found, or availability errors.
 - Refresh reports distinguish API units, RSS network attempts, and the number of
   channels redirected to RSS.
+
+See [CHANGELOG.md](CHANGELOG.md) for the complete release summary.
+
+## Quick start
+
+```bash
+git clone https://github.com/runty/wadstube.git
+cd wadstube
+mkdir -p data
+printf '{ "version": 1, "folders": [] }\n' > data/tube.json
+docker compose up --build -d
+```
+
+Open `http://localhost:3000`. An API key is optional for RSS refreshes and
+canonical `/channel/UC...` additions; configure one when adding handles/video
+URLs or using API refresh mode. The full setup begins in [Setup](#setup).
 
 ## Why
 
@@ -103,8 +135,9 @@ shorts.
   again on demand.
 - **Accessible video actions** — native YouTube links plus explicit copy,
   watched, star, and hide controls
-- **Mobile-friendly** — long-press for context menus, iOS home screen icon,
-  responsive layout
+- **Phone and tablet friendly** — long-press context menus, iOS home screen
+  icon, dynamic viewport sizing, landscape search, and independently scrollable
+  sidebars, channel lists, health results, operations tabs, and modal content
 - **System light/dark mode** — auto-switches with OS theme
 - **Local timezone** — video publish times displayed in your browser's timezone
 - **PocketTube migration** — auto-imports from PocketTube JSON export on first
@@ -498,7 +531,9 @@ watched/starred/hidden/copy actions, favorite-channel marker, a return badge whe
 Favorite-first channel list with paste bar, drag-drop, favorite toggle, and
 remove button. Quarantined legacy entries expose one in-place resolver; the
 original row stays intact if resolution, save, or database update fails. The
-modal traps focus, closes on Escape, and restores focus to its opener.
+modal traps focus, closes on Escape, and restores focus to its opener. On short
+phone and tablet viewports, its add controls remain visible while the channel
+list scrolls independently.
 
 #### `client/src/lib/RefreshPreview.svelte` — Refresh Confirmation
 
@@ -521,8 +556,8 @@ database check, and verify listed nightly backups on demand.
 #### `client/src/lib/ModalShell.svelte` — Shared Modal Behavior
 
 Provides one focus trap, effective hidden/inert filtering, Escape/backdrop
-close, ARIA title/description wiring, and opener focus restoration for every
-modal surface.
+close, ARIA title/description wiring, dynamic-viewport height limits,
+touch-scroll containment, and opener focus restoration for every modal surface.
 
 #### `client/src/lib/RefreshProgress.svelte` — Live Refresh Overlay
 
@@ -616,6 +651,20 @@ The app runs at `http://localhost:3000`.
 2. Click a folder to load its videos (no network call — read from SQLite).
 3. Click "All" for every folder's videos.
 4. Use search to filter by title, channel, or description.
+
+### Phones and Tablets
+
+- At phone widths up to 740 CSS pixels, the header uses two rows so search stays
+  usable in portrait and landscape.
+- Search results and the video feed use normal page scrolling under the sticky
+  header.
+- The folder sidebar, expanded inline channels, Channel Health results, and
+  Operations history each provide their own bounded touch-scroll area.
+- In **Manage channels**, the add/paste controls stay visible while the channel
+  list scrolls. Shared dialogs use the browser's dynamic viewport height, so
+  mobile browser toolbars do not hide their lower content.
+- Tablet portrait and landscape layouts keep the wider multi-column feed when
+  space permits; no device-specific mode needs to be enabled.
 
 ### Refreshing
 
