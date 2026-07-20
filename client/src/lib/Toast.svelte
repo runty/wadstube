@@ -13,6 +13,7 @@
   <div class="toast" role="status" aria-live="polite"
        class:success={$toast.type === "success"}
        class:error={$toast.type === "error"}
+       class:warning={$toast.type === "warning"}
        class:info={$toast.type === "info"}>
     {$toast.message}
   </div>
@@ -41,6 +42,10 @@
   .error {
     background: var(--danger);
     color: #fff;
+  }
+  .warning {
+    background: var(--accent);
+    color: var(--ink);
   }
   .info {
     background: var(--card-bg);

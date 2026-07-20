@@ -5,7 +5,16 @@ const os = require("os");
 const path = require("path");
 
 const Db = require("../lib/db");
-const { DEFAULT_POLICY, evaluateRefresh, strongestMatchingRule, validatePolicy } = require("../lib/refresh-policy");
+const {
+  DEFAULT_POLICY,
+  MAX_REFRESH_INTERVAL_HOURS,
+  MAX_UPLOAD_AGE_DAYS,
+  MAX_FAILURE_RETRY_MINUTES,
+  evaluateRefresh,
+  strongestMatchingRule,
+  validatePolicy,
+} = require("../lib/refresh-policy");
+const { buildRefreshPlan } = require("../lib/refresh-plan");
 const { QuotaLedger, quotaDay, resetAtForDay } = require("../lib/quota");
 const { youtubeApiRequest } = require("../lib/youtube");
 const { refreshChannels } = require("../lib/refresh");
@@ -74,6 +83,44 @@ test("smart policy selects the strongest rule at exact boundaries and is extensi
   });
   assert.equal(strongestMatchingRule(daysAgo(800), now, extended).id, "return_after_2_years");
   assert.throws(() => validatePolicy({ rules: [{ id: "bad id", minUploadAgeDays: 1, minRefreshIntervalHours: 1 }] }), /invalid id/);
+
+  const maximumPolicy = {
+    noHistoryIntervalHours: MAX_REFRESH_INTERVAL_HOURS,
+    newUploadCooldownHours: MAX_REFRESH_INTERVAL_HOURS,
+    failureRetryMinutes: [MAX_FAILURE_RETRY_MINUTES],
+    rules: [{
+      id: "maximum_bounds", label: "Maximum bounds",
+      minUploadAgeDays: MAX_UPLOAD_AGE_DAYS,
+      minRefreshIntervalHours: MAX_REFRESH_INTERVAL_HOURS,
+    }],
+  };
+  const plannerState = {
+    data: { folders: [{ id: "root", channels: [{ id: CHANNEL }], children: [] }] },
+    db: { listChannelRefreshMeta: () => [{ id: CHANNEL, last_refreshed_at: now.toISOString() }] },
+    manualMode: "rss", quota: null, smartPolicy: maximumPolicy,
+  };
+  const maximumPlan = buildRefreshPlan(plannerState, { now });
+  assert.equal(maximumPlan.channels.plans[0].interval_hours, MAX_REFRESH_INTERVAL_HOURS);
+  assert.doesNotThrow(() => new Date(maximumPlan.channels.plans[0].next_due_at).toISOString());
+  for (const excessive of [
+    {
+      hours: MAX_REFRESH_INTERVAL_HOURS + 0.5,
+      days: MAX_UPLOAD_AGE_DAYS + 0.5,
+      retry: MAX_FAILURE_RETRY_MINUTES + 0.5,
+    },
+    { hours: 1e308, days: 1e308, retry: 1e308 },
+  ]) {
+    const invalidPolicies = [
+      { ...maximumPolicy, noHistoryIntervalHours: excessive.hours },
+      { ...maximumPolicy, newUploadCooldownHours: excessive.hours },
+      { ...maximumPolicy, failureRetryMinutes: [excessive.retry] },
+      { ...maximumPolicy, rules: [{ ...maximumPolicy.rules[0], minUploadAgeDays: excessive.days }] },
+      { ...maximumPolicy, rules: [{ ...maximumPolicy.rules[0], minRefreshIntervalHours: excessive.hours }] },
+    ];
+    for (const smartPolicy of invalidPolicies) {
+      assert.throws(() => buildRefreshPlan({ ...plannerState, smartPolicy }, { now }), /at most/);
+    }
+  }
 });
 
 test("quota ledger uses Pacific days, separate buckets, failure accounting, and conservative budget", async (t) => {

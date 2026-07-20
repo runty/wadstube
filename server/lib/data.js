@@ -450,6 +450,111 @@ function moveChannel(data, sourceFolderName, channelId, destFolderName) {
   dest.channels.push(channel);
 }
 
+function exactFolderById(data, folderId) {
+  return walkFolders(data.folders, (folder) =>
+    folder.id === folderId ? folder : undefined,
+  ) || null;
+}
+
+function getUnresolvedChannelMembership(data, folderId, legacyId) {
+  const folder = exactFolderById(data, folderId);
+  if (!folder) throw new Error(`Folder "${folderId}" not found`);
+  const index = folder.channels.findIndex((channel) => channel.id === legacyId);
+  if (index === -1) {
+    throw new Error(`Channel "${legacyId}" not found in "${folderId}"`);
+  }
+  const channel = folder.channels[index];
+  if (isResolvedChannel(channel)) {
+    const err = new Error("Only unresolved subscriptions can be resolved in place");
+    err.status = 409;
+    throw err;
+  }
+  return { folder, index, channel };
+}
+
+function replaceUnresolvedChannel(
+  data,
+  folderId,
+  legacyId,
+  { channelId, channelName },
+) {
+  if (!CHANNEL_ID_RE.test(channelId)) throw new Error("Invalid YouTube channel ID");
+  const { folder, index, channel: existing } = getUnresolvedChannelMembership(
+    data, folderId, legacyId,
+  );
+  if (folder.channels.some((channel, candidate) =>
+    candidate !== index && channel.id === channelId)) {
+    const err = new Error(`Channel "${channelId}" already exists in "${folderId}"`);
+    err.status = 409;
+    throw err;
+  }
+  const replacement = {
+    ...existing,
+    id: channelId,
+    name: existing.userRenamed
+      ? existing.name
+      : channelName || "Unknown",
+  };
+  delete replacement.unresolved;
+  folder.channels[index] = replacement;
+  return replacement;
+}
+
+function moveChannels(data, sourceFolderId, destinationFolderId, channelIds) {
+  const source = exactFolderById(data, sourceFolderId);
+  if (!source) throw new Error(`Source folder "${sourceFolderId}" not found`);
+  const destination = exactFolderById(data, destinationFolderId);
+  if (!destination) throw new Error(`Destination folder "${destinationFolderId}" not found`);
+  if (source === destination) throw new Error("Source and destination folders must differ");
+  const destinationById = new Map();
+  for (const channelId of channelIds) {
+    const sourceMatches = source.channels
+      .map((channel, index) => ({ channel, index }))
+      .filter(({ channel }) => channel.id === channelId);
+    if (!sourceMatches.length) {
+      throw new Error(`Channel "${channelId}" not found in "${sourceFolderId}"`);
+    }
+    if (sourceMatches.length > 1) {
+      const err = new Error(`Channel "${channelId}" has duplicate memberships in "${sourceFolderId}"`);
+      err.status = 409;
+      throw err;
+    }
+    const destinationMatches = destination.channels
+      .map((channel, index) => ({ channel, index }))
+      .filter(({ channel }) => channel.id === channelId);
+    if (destinationMatches.length > 1) {
+      const err = new Error(`Channel "${channelId}" has duplicate memberships in "${destinationFolderId}"`);
+      err.status = 409;
+      throw err;
+    }
+    destinationById.set(channelId, destinationMatches[0] || null);
+  }
+  const moved = [];
+  const deduplicated = [];
+  for (const channelId of channelIds) {
+    const index = source.channels.findIndex((channel) => channel.id === channelId);
+    const [membership] = source.channels.splice(index, 1);
+    const destinationMatch = destinationById.get(channelId);
+    if (destinationMatch) {
+      const existing = destination.channels[destinationMatch.index];
+      const sourceWins = membership.userRenamed === true && existing.userRenamed !== true;
+      const winner = sourceWins ? membership : existing;
+      const loser = sourceWins ? existing : membership;
+      const addedAt = [membership.addedAt, existing.addedAt]
+        .filter((value) => typeof value === "string")
+        .sort()[0] || winner.addedAt;
+      const merged = { ...loser, ...winner, addedAt };
+      if (winner.userRenamed !== true) delete merged.userRenamed;
+      destination.channels[destinationMatch.index] = merged;
+      deduplicated.push(channelId);
+    } else {
+      destination.channels.push(membership);
+      moved.push(channelId);
+    }
+  }
+  return { moved, deduplicated };
+}
+
 // Update channel names in tube.json from a map of {channelId: latestName}.
 // Returns the number of channels whose name was updated.
 function syncChannelNames(data, channelIdToName) {
@@ -509,6 +614,9 @@ module.exports = {
   syncChannelNames,
   renameChannel,
   moveChannel,
+  moveChannels,
+  getUnresolvedChannelMembership,
+  replaceUnresolvedChannel,
   normalizeTubeData,
   normalizeTubeDataDetailed,
   allReferencedChannelIds,

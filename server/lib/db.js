@@ -2,6 +2,9 @@ const fs = require("fs");
 const path = require("path");
 const Database = require("better-sqlite3");
 
+const UNACKNOWLEDGED_RETURN_SQL =
+  "(v.highlight_reason IS NOT NULL AND s.highlight_acknowledged_at IS NULL)";
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS channels (
   id TEXT PRIMARY KEY,
@@ -41,6 +44,7 @@ CREATE TABLE IF NOT EXISTS video_state (
   watched_at TEXT,
   starred_at TEXT,
   hidden_at TEXT,
+  highlight_acknowledged_at TEXT,
   updated_at TEXT NOT NULL
 );
 
@@ -83,6 +87,12 @@ CREATE TABLE IF NOT EXISTS refresh_runs (
   pending_unknown_due INTEGER NOT NULL DEFAULT 0,
   pending_reclassified INTEGER NOT NULL DEFAULT 0,
   error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_videos_channel_published
@@ -211,6 +221,24 @@ class Db {
               effective_mode = COALESCE(effective_mode, mode)
         `);
       },
+      () => this.db.exec(`
+        CREATE TABLE IF NOT EXISTS app_settings (
+          key TEXT PRIMARY KEY,
+          value_json TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      `),
+      () => {
+        addColumn("video_state", "highlight_acknowledged_at", "TEXT");
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_video_state_highlight_ack
+          ON video_state(highlight_acknowledged_at);
+          DELETE FROM video_state
+          WHERE NOT EXISTS (
+            SELECT 1 FROM videos WHERE videos.video_id = video_state.video_id
+          )
+        `);
+      },
     ];
     let version = this.db.pragma("user_version", { simple: true });
     if (version > migrations.length) throw new Error(`Database schema ${version} is newer than this app supports`);
@@ -279,16 +307,32 @@ class Db {
         UPDATE channels SET favorite = ? WHERE id = ?
       `),
       setVideoState: this.db.prepare(`
-        INSERT INTO video_state (video_id, watched_at, starred_at, hidden_at, updated_at)
-        VALUES (@video_id, @watched_at, @starred_at, @hidden_at, @updated_at)
+        INSERT INTO video_state
+          (video_id, watched_at, starred_at, hidden_at,
+           highlight_acknowledged_at, updated_at)
+        VALUES
+          (@video_id, @watched_at, @starred_at, @hidden_at,
+           @highlight_acknowledged_at, @updated_at)
         ON CONFLICT(video_id) DO UPDATE SET
           watched_at = excluded.watched_at,
           starred_at = excluded.starred_at,
           hidden_at = excluded.hidden_at,
+          highlight_acknowledged_at = excluded.highlight_acknowledged_at,
           updated_at = excluded.updated_at
       `),
       getVideoState: this.db.prepare(`
-        SELECT watched_at, starred_at, hidden_at FROM video_state WHERE video_id = ?
+        SELECT watched_at, starred_at, hidden_at, highlight_acknowledged_at
+        FROM video_state WHERE video_id = ?
+      `),
+      acknowledgeHighlight: this.db.prepare(`
+        INSERT INTO video_state
+          (video_id, highlight_acknowledged_at, updated_at)
+        SELECT video_id, ?, ? FROM videos
+        WHERE video_id = ? AND highlight_reason IS NOT NULL
+        ON CONFLICT(video_id) DO UPDATE SET
+          highlight_acknowledged_at = excluded.highlight_acknowledged_at,
+          updated_at = excluded.updated_at
+        WHERE video_state.highlight_acknowledged_at IS NULL
       `),
       insertVideo: this.db.prepare(`
         INSERT INTO videos
@@ -342,35 +386,62 @@ class Db {
             short_last_checked_at = ?
         WHERE video_id = ?
       `),
-      pruneChannel: this.db.prepare(`
-        DELETE FROM videos
+      listPrunableVideos: this.db.prepare(`
+        SELECT video_id FROM videos
         WHERE channel_id = ?
           AND video_id NOT IN (
             SELECT video_id FROM videos
-            WHERE channel_id = ?
-              AND short_status != 'short'
-            ORDER BY published DESC
-            LIMIT ?
+            WHERE channel_id = ? AND short_status != 'short'
+            ORDER BY published DESC, video_id DESC LIMIT ?
           )
           AND video_id NOT IN (
             SELECT video_id FROM videos
-            WHERE channel_id = ?
-              AND short_status = 'short'
-            ORDER BY published DESC
-            LIMIT ?
+            WHERE channel_id = ? AND short_status = 'short'
+            ORDER BY published DESC, video_id DESC LIMIT ?
           )
       `),
+      deleteVideo: this.db.prepare(`DELETE FROM videos WHERE video_id = ?`),
       deleteChannelVideos: this.db.prepare(
         `DELETE FROM videos WHERE channel_id = ?`,
       ),
+      deleteChannelVideoState: this.db.prepare(`
+        DELETE FROM video_state
+        WHERE video_id IN (SELECT video_id FROM videos WHERE channel_id = ?)
+      `),
       deleteChannel: this.db.prepare(`DELETE FROM channels WHERE id = ?`),
+      deleteVideoState: this.db.prepare(`DELETE FROM video_state WHERE video_id = ?`),
       allChannelIds: this.db.prepare(`SELECT id FROM channels`),
       channelNames: this.db.prepare(`SELECT id, title FROM channels`),
       stats: this.db.prepare(`
         SELECT
           (SELECT COUNT(*) FROM channels) AS channels,
-          (SELECT COUNT(*) FROM videos WHERE short_status != 'short') AS videos
+          video_counts.videos,
+          video_counts.total_videos,
+          video_counts.shorts,
+          video_counts.return_videos,
+          video_counts.unknown_videos,
+          (SELECT COUNT(*) FROM video_state) AS video_state_rows
+        FROM (
+          SELECT
+            COUNT(*) AS total_videos,
+            COUNT(CASE WHEN short_status != 'short' THEN 1 END) AS videos,
+            COUNT(CASE WHEN short_status = 'short' THEN 1 END) AS shorts,
+            COUNT(CASE WHEN highlight_reason IS NOT NULL THEN 1 END) AS return_videos,
+            COUNT(CASE WHEN short_status = 'unknown' THEN 1 END) AS unknown_videos
+          FROM videos
+        ) AS video_counts
       `),
+      getSetting: this.db.prepare(`
+        SELECT value_json, updated_at FROM app_settings WHERE key = ?
+      `),
+      setSetting: this.db.prepare(`
+        INSERT INTO app_settings (key, value_json, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+          value_json = excluded.value_json,
+          updated_at = excluded.updated_at
+      `),
+      deleteSetting: this.db.prepare(`DELETE FROM app_settings WHERE key = ?`),
     };
   }
 
@@ -453,6 +524,22 @@ class Db {
     return this.getChannelMeta(id);
   }
 
+  setChannelsFavorite(ids, favorite, titles = {}) {
+    const unique = [...new Set(ids)];
+    const tx = this.db.transaction(() => {
+      for (const id of unique) {
+        if (!this.stmts.getChannelMeta.get(id)) {
+          this.stmts.upsertChannel.run(id, titles[id] || "Unknown");
+        }
+      }
+      for (const id of unique) {
+        this.stmts.setChannelFavorite.run(favorite ? 1 : 0, id);
+      }
+      return unique.map((id) => this.getChannelMeta(id));
+    });
+    return tx();
+  }
+
   updateChannelHealth(id, { status, error = null, checkedAt, successAt } = {}) {
     const fields = [];
     const params = [];
@@ -500,6 +587,7 @@ class Db {
       watched_at: valueFor("watched_at"),
       starred_at: valueFor("starred_at"),
       hidden_at: valueFor("hidden_at"),
+      highlight_acknowledged_at: current.highlight_acknowledged_at || null,
       updated_at: now,
     };
     this.stmts.setVideoState.run(state);
@@ -509,6 +597,24 @@ class Db {
       hidden: !!state.hidden_at,
       ...state,
     };
+  }
+
+  acknowledgeHighlights(videoIds, at = new Date().toISOString()) {
+    if (!Array.isArray(videoIds) || videoIds.length < 1 || videoIds.length > 5000) {
+      throw new Error("videoIds must contain 1 to 5000 IDs");
+    }
+    if (videoIds.some((id) => typeof id !== "string" || !id || id.length > 128)) {
+      throw new Error("videoIds must contain valid strings");
+    }
+    const ids = [...new Set(videoIds)];
+    const tx = this.db.transaction(() => {
+      let acknowledged = 0;
+      for (const id of ids) {
+        acknowledged += this.stmts.acknowledgeHighlight.run(at, at, id).changes;
+      }
+      return acknowledged;
+    });
+    return tx();
   }
 
   hasVideo(videoId) {
@@ -581,7 +687,16 @@ class Db {
     // Keep the requested number of visible videos independently from a
     // bounded cache of known Shorts. Unknown rows remain visible and are
     // retried by the refresh pipeline until classification succeeds.
-    this.stmts.pruneChannel.run(channelId, channelId, keep, channelId, keep);
+    const tx = this.db.transaction(() => {
+      const rows = this.stmts.listPrunableVideos.all(
+        channelId, channelId, keep, channelId, keep,
+      );
+      for (const row of rows) {
+        this.stmts.deleteVideoState.run(row.video_id);
+        this.stmts.deleteVideo.run(row.video_id);
+      }
+    });
+    tx();
   }
 
   // --- reads ---
@@ -590,7 +705,8 @@ class Db {
   // full-text-ish search, composite keyset pagination (before + before_id
   // for the next page — both needed so ties on `published` don't skip
   // rows), and a hard limit.
-  queryVideos({ channelIds, channelId, q, before, beforeId, beforeFavorite, beforeReturning, limit, view, favorites, sort } = {}) {
+  _videoWhere({ channelIds, channelId, q, before, beforeId, beforeFavorite,
+    beforeReturning, view, favorites, sort } = {}, { pagination = true } = {}) {
     const wheres = ["v.short_status != 'short'"];
     const params = [];
 
@@ -615,43 +731,56 @@ class Db {
         params.push(like, like, like);
       }
     }
-    if (view === "unread") wheres.push("s.watched_at IS NULL AND s.hidden_at IS NULL");
+    if (view === "returns") {
+      wheres.push(UNACKNOWLEDGED_RETURN_SQL);
+      wheres.push("s.hidden_at IS NULL");
+    } else if (view === "unread") wheres.push("s.watched_at IS NULL AND s.hidden_at IS NULL");
     else if (view === "starred") wheres.push("s.starred_at IS NOT NULL AND s.hidden_at IS NULL");
     else if (view === "hidden") wheres.push("s.hidden_at IS NOT NULL");
     else wheres.push("s.hidden_at IS NULL");
     if (favorites) wheres.push("c.favorite = 1");
-    if (before && beforeId && sort === "favorite") {
+    if (pagination && before && beforeId && sort === "favorite") {
       const op = sort === "oldest" ? ">" : "<";
       wheres.push(`(c.favorite < ? OR (c.favorite = ? AND (v.published ${op} ? OR (v.published = ? AND v.video_id ${op} ?))))`);
       params.push(beforeFavorite ? 1 : 0, beforeFavorite ? 1 : 0, before, before, beforeId);
-    } else if (before && beforeId && sort === "returning") {
+    } else if (pagination && before && beforeId && sort === "returning") {
       const returning = beforeReturning ? 1 : 0;
-      wheres.push(`((v.highlight_reason IS NOT NULL) < ? OR
-        ((v.highlight_reason IS NOT NULL) = ? AND
+      wheres.push(`(${UNACKNOWLEDGED_RETURN_SQL} < ? OR
+        (${UNACKNOWLEDGED_RETURN_SQL} = ? AND
           (v.published < ? OR (v.published = ? AND v.video_id < ?))))`);
       params.push(returning, returning, before, before, beforeId);
-    } else if (before && beforeId) {
+    } else if (pagination && before && beforeId) {
       // Tiebreak on video_id when multiple rows share `published`.
       const op = sort === "oldest" ? ">" : "<";
       wheres.push(`(v.published ${op} ? OR (v.published = ? AND v.video_id ${op} ?))`);
       params.push(before, before, beforeId);
-    } else if (before) {
+    } else if (pagination && before) {
       wheres.push(`v.published ${sort === "oldest" ? ">" : "<"} ?`);
       params.push(before);
     }
+    return { wheres, params };
+  }
+
+  queryVideos(options = {}) {
+    const { limit, favorites, sort } = options;
+    const { wheres, params } = this._videoWhere(options);
 
     const capped = Math.min(Math.max(parseInt(limit, 10) || 200, 1), 500);
 
     const sql =
       `SELECT v.video_id, v.channel_id, v.title, v.description,
-              v.thumbnail, v.published, v.highlight_reason,
+              v.thumbnail, v.published,
+              CASE WHEN ${UNACKNOWLEDGED_RETURN_SQL}
+                THEN v.highlight_reason ELSE NULL END AS highlight_reason,
+              v.highlight_reason AS highlight_history_reason,
               c.title AS channel, c.favorite AS channel_favorite,
-              s.watched_at, s.starred_at, s.hidden_at
+              s.watched_at, s.starred_at, s.hidden_at,
+              s.highlight_acknowledged_at
        FROM videos v
        LEFT JOIN channels c ON c.id = v.channel_id
        LEFT JOIN video_state s ON s.video_id = v.video_id
        WHERE ${wheres.join(" AND ")}
-       ORDER BY ${sort === "returning" ? "(v.highlight_reason IS NOT NULL) DESC, " : ""}
+       ORDER BY ${sort === "returning" ? `${UNACKNOWLEDGED_RETURN_SQL} DESC, ` : ""}
                 ${favorites || sort === "favorite" ? "c.favorite DESC, " : ""}
                 v.published ${sort === "oldest" ? "ASC" : "DESC"},
                 v.video_id ${sort === "oldest" ? "ASC" : "DESC"}
@@ -659,6 +788,29 @@ class Db {
     params.push(capped);
 
     return this.db.prepare(sql).all(...params).map(shape);
+  }
+
+  listUnacknowledgedReturns(options = {}) {
+    const { wheres, params } = this._videoWhere(
+      { ...options, view: "returns" },
+      { pagination: false },
+    );
+    const joins = `FROM videos v
+      LEFT JOIN channels c ON c.id = v.channel_id
+      LEFT JOIN video_state s ON s.video_id = v.video_id`;
+    const count = this.db.prepare(`
+      SELECT COUNT(*) AS count ${joins} WHERE ${wheres.join(" AND ")}
+    `).get(...params).count;
+    const limit = Math.min(Math.max(Number(options.limit) || 500, 1), 5000);
+    const direction = options.sort === "oldest" ? "ASC" : "DESC";
+    const leadingOrder = options.sort === "favorite" ? "c.favorite DESC, " : "";
+    const videoIds = this.db.prepare(`
+      SELECT v.video_id ${joins}
+      WHERE ${wheres.join(" AND ")}
+      ORDER BY ${leadingOrder}v.published ${direction}, v.video_id ${direction}
+      LIMIT ?
+    `).all(...params, limit).map((row) => row.video_id);
+    return { count, videoIds };
   }
 
   getUnreadCounts() {
@@ -689,6 +841,36 @@ class Db {
     return { channelCount: s.channels, videoCount: s.videos };
   }
 
+  getSystemStats() {
+    const s = this.stmts.stats.get();
+    return {
+      channelCount: s.channels,
+      visibleVideoCount: s.videos,
+      totalVideoCount: s.total_videos,
+      shortCount: s.shorts,
+      returnVideoCount: s.return_videos,
+      unknownVideoCount: s.unknown_videos,
+      videoStateCount: s.video_state_rows,
+    };
+  }
+
+  getSetting(key) {
+    const row = this.stmts.getSetting.get(key);
+    if (!row) return null;
+    return JSON.parse(row.value_json);
+  }
+
+  setSetting(key, value, at = new Date().toISOString()) {
+    const encoded = JSON.stringify(value);
+    if (encoded === undefined) throw new Error(`Setting "${key}" is not JSON serializable`);
+    this.stmts.setSetting.run(key, encoded, at);
+    return value;
+  }
+
+  deleteSetting(key) {
+    return this.stmts.deleteSetting.run(key).changes > 0;
+  }
+
   reserveApiUsage({ day, bucket, endpoint, units = 1, limit }) {
     const tx = this.db.transaction(() => {
       const used = this.db.prepare(
@@ -717,6 +899,15 @@ class Db {
       SELECT quota_day, bucket, endpoint, calls, units
       FROM api_usage WHERE quota_day = ? ORDER BY bucket, endpoint
     `).all(day);
+  }
+
+  getApiUsageRange(startDay, endDay) {
+    return this.db.prepare(`
+      SELECT quota_day, bucket, endpoint, calls, units
+      FROM api_usage
+      WHERE quota_day >= ? AND quota_day <= ?
+      ORDER BY quota_day, bucket, endpoint
+    `).all(startDay, endDay);
   }
 
   startRefreshRun(metrics) {
@@ -796,13 +987,43 @@ class Db {
     return this.db.pragma("quick_check", { simple: true });
   }
 
+  getStorageStats() {
+    const size = (file) => {
+      try { return fs.statSync(file).size; } catch { return 0; }
+    };
+    const databaseBytes = size(this.dbFile);
+    const walBytes = size(`${this.dbFile}-wal`);
+    const shmBytes = size(`${this.dbFile}-shm`);
+    return {
+      databaseBytes,
+      walBytes,
+      shmBytes,
+      totalBytes: databaseBytes + walBytes + shmBytes,
+      journalMode: this.db.pragma("journal_mode", { simple: true }),
+    };
+  }
+
   // Remove a single channel and its videos.
   removeChannel(channelId) {
     const tx = this.db.transaction(() => {
+      this.stmts.deleteChannelVideoState.run(channelId);
       this.stmts.deleteChannelVideos.run(channelId);
       this.stmts.deleteChannel.run(channelId);
     });
     tx();
+  }
+
+  removeChannels(channelIds) {
+    const unique = [...new Set(channelIds)];
+    const tx = this.db.transaction(() => {
+      for (const id of unique) {
+        this.stmts.deleteChannelVideoState.run(id);
+        this.stmts.deleteChannelVideos.run(id);
+        this.stmts.deleteChannel.run(id);
+      }
+    });
+    tx();
+    return unique.length;
   }
 
   // Delete every channel (and its videos) whose id isn't in the given
@@ -815,6 +1036,7 @@ class Db {
     if (!stale.length) return 0;
     const tx = this.db.transaction(() => {
       for (const id of stale) {
+        this.stmts.deleteChannelVideoState.run(id);
         this.stmts.deleteChannelVideos.run(id);
         this.stmts.deleteChannel.run(id);
       }
@@ -855,6 +1077,8 @@ function shape(row) {
     hidden: !!row.hidden_at,
     channel_favorite: !!row.channel_favorite,
     highlight_reason: row.highlight_reason || null,
+    highlight_history_reason: row.highlight_history_reason || null,
+    highlight_acknowledged_at: row.highlight_acknowledged_at || null,
   };
 }
 

@@ -1,5 +1,7 @@
 const fs = require("fs");
 const path = require("path");
+const Database = require("better-sqlite3");
+const { normalizeTubeDataDetailed } = require("./data");
 
 // Format a Date as YYYY-MM-DD in local time (container TZ).
 function localDateString(d = new Date()) {
@@ -26,6 +28,76 @@ function monthKey(d) {
 
 function backupsRoot(dataDir) {
   return path.join(dataDir, "backups");
+}
+
+function validBackupDate(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, date] = value.split("-").map(Number);
+  if (year < 1970 || year > 9999) return false;
+  const parsed = new Date(Date.UTC(year, month - 1, date));
+  return parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === date;
+}
+
+function backupDirectory(dataDir, date) {
+  if (!validBackupDate(date)) throw new Error("Backup date must be a valid YYYY-MM-DD date");
+  const root = backupsRoot(dataDir);
+  const directory = path.join(root, date);
+  if (path.dirname(directory) !== root) throw new Error("Invalid backup path");
+  return directory;
+}
+
+function verifyBackupDirectory(directory) {
+  const tubePath = path.join(directory, "tube.json");
+  const databasePath = path.join(directory, "wadstube.db");
+  if (!fs.statSync(tubePath).isFile() || !fs.statSync(databasePath).isFile()) {
+    throw new Error("Backup must contain tube.json and wadstube.db files");
+  }
+
+  let parsed;
+  try { parsed = JSON.parse(fs.readFileSync(tubePath, "utf8")); }
+  catch (err) { throw new Error(`tube.json parse failed: ${err.message}`); }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
+      parsed.version !== 1 || !Array.isArray(parsed.folders)) {
+    throw new Error("tube.json is not a supported WadsTube version 1 backup");
+  }
+  const normalized = normalizeTubeDataDetailed(parsed);
+  if (normalized.report.losses.length) {
+    throw new Error(`tube.json normalization would lose data: ${normalized.report.losses[0]}`);
+  }
+
+  let snapshot;
+  let quickCheck;
+  try {
+    snapshot = new Database(databasePath, { readonly: true, fileMustExist: true });
+    snapshot.pragma("query_only = ON");
+    quickCheck = snapshot.pragma("quick_check", { simple: true });
+  } catch (err) {
+    throw new Error(`wadstube.db verification failed: ${err.message}`);
+  } finally {
+    try { snapshot?.close(); } catch {}
+  }
+  if (quickCheck !== "ok") throw new Error(`wadstube.db quick_check failed: ${quickCheck}`);
+
+  return {
+    ok: true,
+    quickCheck,
+    normalizationRepairs: normalized.report.repairs.length,
+    files: {
+      "tube.json": { bytes: fs.statSync(tubePath).size },
+      "wadstube.db": { bytes: fs.statSync(databasePath).size },
+    },
+  };
+}
+
+function verifyBackup(dataDir, date) {
+  const directory = backupDirectory(dataDir, date);
+  if (!fs.existsSync(directory) || !fs.statSync(directory).isDirectory()) {
+    const err = new Error(`Backup ${date} not found`);
+    err.status = 404;
+    throw err;
+  }
+  return { date, directory, ...verifyBackupDirectory(directory) };
 }
 
 function trackAppTask(appState, promise) {
@@ -59,6 +131,27 @@ function listBackups(dataDir) {
     .reverse();
 }
 
+function listBackupDetails(dataDir, limit = 30) {
+  const bounded = Number(limit);
+  if (!Number.isInteger(bounded) || bounded < 1 || bounded > 100) {
+    throw new Error("Backup limit must be an integer from 1 to 100");
+  }
+  return listBackups(dataDir).slice(0, bounded).map((date) => {
+    const directory = backupDirectory(dataDir, date);
+    const tube = fs.statSync(path.join(directory, "tube.json"));
+    const database = fs.statSync(path.join(directory, "wadstube.db"));
+    return {
+      date,
+      modifiedAt: new Date(Math.max(tube.mtimeMs, database.mtimeMs)).toISOString(),
+      files: {
+        "tube.json": { bytes: tube.size },
+        "wadstube.db": { bytes: database.size },
+      },
+      totalBytes: tube.size + database.size,
+    };
+  });
+}
+
 function createBackup(dataDir, db) {
   const date = localDateString();
   const root = ensureBackupsDir(dataDir);
@@ -72,6 +165,7 @@ function createBackup(dataDir, db) {
     if (!db) throw new Error("database snapshot provider is required");
     fs.copyFileSync(tubeSource, path.join(stageDir, "tube.json"));
     db.vacuumInto(path.join(stageDir, "wadstube.db"));
+    const verification = verifyBackupDirectory(stageDir);
 
     // Publish the complete directory as a unit. If the second rename fails,
     // restore the prior directory before returning an error.
@@ -89,7 +183,7 @@ function createBackup(dataDir, db) {
       try { fs.rmSync(oldDir, { recursive: true, force: true }); }
       catch (err) { console.warn(`[backup] could not remove replaced snapshot ${oldDir}: ${err.message}`); }
     }
-    return { dir: destDir, files: ["tube.json", "wadstube.db"], ok: true };
+    return { dir: destDir, files: ["tube.json", "wadstube.db"], verification, ok: true };
   } catch (error) {
     try { fs.rmSync(stageDir, { recursive: true, force: true }); } catch {}
     if (oldPublished && fs.existsSync(oldDir) && !fs.existsSync(destDir)) {
@@ -170,8 +264,10 @@ async function runBackupNow(dataDir, db, appState) {
       `[backup] wrote ${path.basename(dir)} (${files.join(", ") || "nothing"}); ` +
         `kept ${kept.length}${deleted.length ? `, deleted ${deleted.length} (${deleted.join(", ")})` : ""}`,
     );
+    return { ok: true, dir, files, kept, deleted };
   } catch (err) {
     console.error(`[backup] failed: ${err.message}`);
+    return { ok: false, error: err.message };
   } finally {
     if (handle) {
       const { releaseLock } = require("./refresh");
@@ -189,11 +285,11 @@ function msUntilNext1am(now = new Date()) {
 }
 
 // Kick off a backup if the most recent one is older than 25 hours (or none exists).
-function catchUpIfStale(dataDir, db, appState) {
+function catchUpIfStale(dataDir, run) {
   const names = listBackups(dataDir);
   if (names.length === 0) {
     console.log("[backup] no prior backup found, creating initial backup");
-    trackAppTask(appState, runBackupNow(dataDir, db, appState));
+    run("initial");
     return;
   }
   const latest = names[0]; // newest first
@@ -202,23 +298,60 @@ function catchUpIfStale(dataDir, db, appState) {
   const ageHours = (Date.now() - latestDate.getTime()) / 3600000;
   if (ageHours > 25) {
     console.log(`[backup] most recent backup is ${ageHours.toFixed(0)}h old, creating catch-up backup`);
-    trackAppTask(appState, runBackupNow(dataDir, db, appState));
+    run("catch-up");
   }
 }
 
 function scheduleBackups(dataDir, db, appState) {
   ensureBackupsDir(dataDir);
-  catchUpIfStale(dataDir, db, appState);
-
   let stopped = false;
   let timer = null;
+  let currentTask = null;
+  const state = {
+    scheduled: true,
+    running: false,
+    currentReason: null,
+    nextRunAt: null,
+    lastStartedAt: null,
+    lastCompletedAt: null,
+    lastSuccessAt: null,
+    lastFailureAt: null,
+    lastError: null,
+  };
+
+  function run(reason) {
+    if (currentTask) return currentTask;
+    state.running = true;
+    state.currentReason = reason;
+    state.lastStartedAt = new Date().toISOString();
+    currentTask = runBackupNow(dataDir, db, appState).then((result) => {
+      state.lastCompletedAt = new Date().toISOString();
+      if (result.ok) {
+        state.lastSuccessAt = state.lastCompletedAt;
+        state.lastError = null;
+      } else {
+        state.lastFailureAt = state.lastCompletedAt;
+        state.lastError = result.error;
+      }
+      return result;
+    }).finally(() => {
+      state.running = false;
+      state.currentReason = null;
+      currentTask = null;
+    });
+    return trackAppTask(appState, currentTask);
+  }
+
+  catchUpIfStale(dataDir, run);
+
   function scheduleNext() {
     if (stopped) return;
     const delay = msUntilNext1am();
     const when = new Date(Date.now() + delay);
+    state.nextRunAt = when.toISOString();
     console.log(`[backup] next run at ${when.toString()} (in ${(delay / 3600000).toFixed(1)}h)`);
     timer = setTimeout(() => {
-      trackAppTask(appState, runBackupNow(dataDir, db, appState));
+      run("scheduled");
       scheduleNext(); // recompute next 1am to be DST-safe
     }, delay);
   }
@@ -227,8 +360,12 @@ function scheduleBackups(dataDir, db, appState) {
   return {
     stop() {
       stopped = true;
+      state.scheduled = false;
+      state.nextRunAt = null;
       if (timer) clearTimeout(timer);
     },
+    status() { return { ...state }; },
+    runNow() { return run("manual"); },
   };
 }
 
@@ -238,6 +375,10 @@ module.exports = {
   runBackupNow,
   scheduleBackups,
   listBackups,
+  listBackupDetails,
+  verifyBackup,
+  verifyBackupDirectory,
+  validBackupDate,
   // exported for testing
   isoWeekKey,
   monthKey,

@@ -2,16 +2,15 @@ const express = require("express");
 
 module.exports = function (appState) {
   const router = express.Router();
-  const { getChannelsForFolder, collectAllChannelIds, collectAllChannels, findFolder,
-    isResolvedChannel, syncChannelNames, saveData, resolveFolderRouteId } =
+  const { isResolvedChannel, syncChannelNames, saveData, resolveFolderRouteId } =
     require("../lib/data");
   const {
     refreshChannels,
-    isRssFallbackErrorCode,
     tryAcquireLock,
     releaseLock,
   } = require("../lib/refresh");
-  const { evaluateRefresh } = require("../lib/refresh-policy");
+  const { buildRefreshPlan, serializeRefreshPlan } = require("../lib/refresh-plan");
+  const performRefresh = appState.refreshChannels || refreshChannels;
 
   function syncNamesFromDb() {
     const names = appState.db.getChannelNames();
@@ -23,13 +22,13 @@ module.exports = function (appState) {
   }
 
   async function runRefresh(channelIds, onEvent, scope = "all", skipped = 0, runMode = {}) {
-    const summary = await refreshChannels(
+    const summary = await performRefresh(
       appState.db,
       channelIds,
       {
         keep: appState.maxVideos,
-        mode: runMode.mode || appState.manualMode,
-        requestedMode: runMode.requestedMode || appState.manualMode,
+        mode: runMode.effective || appState.manualMode,
+        requestedMode: runMode.requested || appState.manualMode,
         fallbackReason: runMode.fallbackReason || null,
         apiKey: appState.apiKey,
         quota: appState.quota,
@@ -136,41 +135,6 @@ module.exports = function (appState) {
     return handle;
   }
 
-  function chooseRunMode(count) {
-    const requestedMode = appState.manualMode;
-    if (requestedMode !== "api" || !appState.quota) {
-      return { requestedMode, mode: requestedMode, fallbackReason: null };
-    }
-    try {
-      appState.quota.assertCanSpend("general", count);
-      return { requestedMode, mode: requestedMode, fallbackReason: null };
-    } catch (err) {
-      if (!isRssFallbackErrorCode(err.code)) throw err;
-      return { requestedMode, mode: "rss", fallbackReason: err.code };
-    }
-  }
-
-  // Refresh is always initiated by the user. Active channels are eligible on
-  // every click; inactivity/no-history/failure rules only suppress channels
-  // whose stored minimum interval has not elapsed yet.
-  function selectDueChannels(channelIds) {
-    const unique = [...new Set(channelIds)];
-    const metadata = new Map(
-      appState.db.listChannelRefreshMeta(unique).map((row) => [row.id, row]),
-    );
-    const due = [];
-    let skipped = 0;
-    for (const id of unique) {
-      const eligibility = evaluateRefresh(metadata.get(id) || {}, {
-        policy: appState.smartPolicy,
-        baseIntervalMinutes: 0,
-      });
-      if (eligibility.due) due.push(id);
-      else skipped++;
-    }
-    return { due, skipped };
-  }
-
   function seedSelectedChannelTitles(channelIds) {
     const names = new Map();
     function walk(folders) {
@@ -201,23 +165,40 @@ module.exports = function (appState) {
     return resolved.id;
   }
 
+  // Preview is deliberately read-only. POST always builds a fresh plan after
+  // taking the lock rather than trusting this response as an execution token.
+  router.get("/preview", (_req, res) => {
+    try {
+      res.json(serializeRefreshPlan(buildRefreshPlan(appState)));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  router.get("/preview/:folder", (req, res) => {
+    try {
+      res.json(serializeRefreshPlan(buildRefreshPlan(appState, {
+        folderId: folderId(req.params.folder, res),
+      })));
+    } catch (err) {
+      res.status(/not found/i.test(err.message) ? 404 : 400).json({ error: err.message });
+    }
+  });
+
   // Refresh all
   router.post("/", async (req, res) => {
     const handle = tryAcquireOrReject(res);
     if (!handle) return;
     try {
-      const allChannels = [];
-      let skipped = 0;
-      for (const folder of appState.data.folders) {
-        allChannels.push(...collectAllChannelIds(folder));
-        skipped += collectAllChannels(folder).filter((channel) => !isResolvedChannel(channel)).length;
-      }
-      seedSelectedChannelTitles(allChannels);
-      const selected = selectDueChannels(allChannels);
-      skipped += selected.skipped;
-      const runMode = chooseRunMode(selected.due.length);
-      console.log(`Refreshing all: ${selected.due.length} due, ${skipped} skipped`);
-      await streamRefresh(req, res, selected.due, { label: "all", skipped, runMode });
+      const plan = buildRefreshPlan(appState);
+      seedSelectedChannelTitles(plan.channels.plans.map((channel) => channel.channel_id));
+      const skipped = plan.memberships.unresolved + plan.channels.skipped;
+      console.log(`Refreshing all: ${plan.channels.due} due, ${skipped} skipped`);
+      await streamRefresh(req, res, plan.channels.dueIds, {
+        label: "all",
+        skipped,
+        runMode: plan.mode,
+      });
     } finally {
       releaseLock(appState, handle);
     }
@@ -231,24 +212,15 @@ module.exports = function (appState) {
     const handle = tryAcquireOrReject(res);
     if (!handle) return;
     try {
-      const channelIds = getChannelsForFolder(appState.data, folder);
-      const allMemberships = collectAllChannels(findFolder(appState.data.folders, folder));
-      if (allMemberships.length === 0) {
-        res.status(404).json({ error: `Folder "${folder}" not found` });
-        return;
-      }
-      const skipped = allMemberships.filter((channel) => !isResolvedChannel(channel)).length;
-      seedSelectedChannelTitles(channelIds);
-      const selected = selectDueChannels(channelIds);
-      const totalSkipped = skipped + selected.skipped;
-      const runMode = chooseRunMode(selected.due.length);
-      console.log(`Refreshing folder "${folder}": ${selected.due.length} due, ${totalSkipped} skipped`);
-      await streamRefresh(req, res, selected.due, {
+      const plan = buildRefreshPlan(appState, { folderId: folder });
+      seedSelectedChannelTitles(plan.channels.plans.map((channel) => channel.channel_id));
+      const skipped = plan.memberships.unresolved + plan.channels.skipped;
+      console.log(`Refreshing folder "${folder}": ${plan.channels.due} due, ${skipped} skipped`);
+      await streamRefresh(req, res, plan.channels.dueIds, {
         label: `"${folder}"`,
         folder,
-        channelIdsForFolder: channelIds,
-        skipped: totalSkipped,
-        runMode,
+        skipped,
+        runMode: plan.mode,
       });
     } finally {
       releaseLock(appState, handle);

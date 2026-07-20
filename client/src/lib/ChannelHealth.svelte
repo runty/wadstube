@@ -1,176 +1,143 @@
 <script>
   import { onMount } from "svelte";
+  import ModalShell from "./ModalShell.svelte";
   import {
-    channelHealth, healthFilter, showHealth, loadChannelHealth,
-    retryChannel, deleteChannel, error, toast, quotaStatus, refreshRuns,
-    loadQuotaStatus, loadRefreshRuns,
+    channelHealth, showHealth, loadChannelHealth, error, toast, quotaStatus,
+    refreshRuns, loadQuotaStatus, loadRefreshRuns, folders, loadFolders,
+    quotaStatusStale, reloadAfterBulkAction,
   } from "../stores/feed.js";
-  import { rssFallbackSuffix } from "./refresh-report.js";
+  import {
+    bulkDelete, bulkFavorite, bulkMove, bulkRefresh, MAX_BULK_CHANNELS,
+    filterAndSortHealth, listFolderOptions, selectVisibleIds,
+  } from "../stores/operations.js";
 
-  let panel;
-  let closeButton;
-  let previouslyFocused;
-  let retrying = null;
-  let deleting = null;
+  let loading = true, busy = false, search = "", status = "all", due = "all", inactivity = "all", sort = "title";
+  let selected = new Set(), sourceFolderId = "", destinationFolderId = "";
+  $: visible = filterAndSortHealth($channelHealth, { search, status, due, inactivity, sort });
+  $: folderOptions = listFolderOptions($folders);
+  $: selectedRows = $channelHealth.filter((row) => selected.has(row.id));
+  $: visibleSelectedCount = visible.filter((row) => selected.has(row.id)).length;
+  $: hiddenSelectedCount = selected.size - visibleSelectedCount;
+  $: movableIds = sourceFolderId ? selectedRows.filter((row) => row.folderIds?.includes(sourceFolderId)).map((row) => row.id) : [];
+  $: folderNames = new Map(folderOptions.map((folder) => [folder.id, folder.name]));
 
-  onMount(() => {
-    previouslyFocused = document.activeElement;
-    closeButton?.focus();
-    Promise.all([loadChannelHealth(), loadQuotaStatus(), loadRefreshRuns()])
-      .catch((err) => error.set(err.message));
-    return () => previouslyFocused?.focus?.();
+  onMount(async () => {
+    try { await Promise.all([loadChannelHealth("all"), loadQuotaStatus(), loadRefreshRuns(), loadFolders()]); }
+    catch (err) { error.set(err.message); }
+    finally { loading = false; }
   });
-
-  function close() { showHealth.set(false); }
-  function keydown(event) {
-    if (event.key === "Escape") close();
-    if (event.key !== "Tab") return;
-    const focusable = [...panel.querySelectorAll("button, select, [href], [tabindex]:not([tabindex='-1'])")]
-      .filter((node) => !node.disabled);
-    if (!focusable.length) return;
-    const first = focusable[0], last = focusable.at(-1);
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  const close = () => showHealth.set(false);
+  function toggle(id) { const next = new Set(selected); next.has(id) ? next.delete(id) : next.add(id); selected = next; }
+  function selectVisible() {
+    selected = selectVisibleIds(selected, visible.map((row) => row.id));
   }
-  async function changeFilter() {
-    try { await loadChannelHealth($healthFilter); } catch (err) { error.set(err.message); }
-  }
-  async function retry(channel) {
-    retrying = channel.id;
-    try {
-      const summary = await retryChannel(channel.id);
-      toast.set({
-        message: `Refreshed ${channel.title}${rssFallbackSuffix(summary)} · ${summary?.checked ?? 0} channels checked · ${summary?.api_units || 0} API units this refresh · ${summary?.quota?.buckets?.general?.used ?? "?"} API units used today`,
-        type: "success",
-        durationMs: 10_000,
-      });
-    } catch (err) {
-      error.set(err.message);
-      loadChannelHealth($healthFilter).catch(() => {});
+  async function act(ids, action, describe, { deleted = false } = {}) {
+    const actionIds = [...ids];
+    if (!actionIds.length || actionIds.length > MAX_BULK_CHANNELS) return;
+    busy = true;
+    let result = null, mutationError = null;
+    try { result = await action(actionIds); }
+    catch (err) { mutationError = err; }
+    const reload = await reloadAfterBulkAction({
+      deletedIds: deleted && !mutationError ? actionIds : [],
+      mutationSucceeded: !mutationError,
+    });
+    if (mutationError) {
+      error.set(mutationError.message);
+    } else {
+      selected = new Set([...selected].filter((id) => !actionIds.includes(id)));
+      const report = describe(result);
+      const reloadWarning = reload.reloadFailures ? ` · ${reload.reloadFailures} view reload${reload.reloadFailures === 1 ? "" : "s"} failed` : "";
+      toast.set({ message: report.message + reloadWarning, type: reload.reloadFailures ? "warning" : report.type, durationMs: 10000 });
     }
-    finally { retrying = null; }
+    const valid = new Set($channelHealth.map((row) => row.id));
+    selected = new Set([...selected].filter((id) => valid.has(id)));
+    busy = false;
   }
-  async function remove(channel) {
-    if (!confirm(`Delete ${channel.title} from every folder? Its cached videos and channel refresh state will also be removed.`)) return;
-    deleting = channel.id;
-    try {
-      await deleteChannel(channel.id);
-      toast.set({ message: `Deleted ${channel.title} from all folders`, type: "success" });
-    } catch (err) {
-      error.set(err.message);
-    } finally {
-      deleting = null;
-    }
+  function refreshSelected() {
+    const ids = [...selected];
+    return act(ids, bulkRefresh, (result) => ({
+      message: `${result.summary.checked || 0} checked · ${result.summary.errors || 0} errors · ${result.summary.api_units || 0} API units · ${result.summary.daily_remaining ?? "?"} left`,
+      type: result.summary.errors ? "warning" : "success",
+    }));
+  }
+  function favoriteSelected(favorite) {
+    const ids = [...selected];
+    return act(ids, (snapshot) => bulkFavorite(snapshot, favorite), () => ({ message: favorite ? "Channels favorited" : "Channels unfavorited", type: "success" }));
+  }
+  function deleteSelected() {
+    const memberships = selectedRows.reduce((sum, row) => sum + (row.folderIds?.length || 0), 0);
+    if (!confirm(`Delete ${selected.size} channels and ${memberships} folder memberships? Cached videos and refresh state will also be removed.`)) return;
+    const ids = [...selected];
+    return act(ids, bulkDelete, (result) => ({ message: `Deleted ${result.removedChannels} channels and ${result.removedMemberships} memberships`, type: "success" }), { deleted: true });
+  }
+  async function moveSelected() {
+    if (!sourceFolderId || !destinationFolderId || !movableIds.length) return;
+    if (!confirm(`Move ${movableIds.length} direct memberships from ${folderNames.get(sourceFolderId)} to ${folderNames.get(destinationFolderId)}?`)) return;
+    const ids = [...movableIds];
+    const source = sourceFolderId, destination = destinationFolderId;
+    return act(ids, (snapshot) => bulkMove(snapshot, source, destination), (result) => ({ message: `${result.moved} moved · ${result.deduplicated} merged`, type: "success" }));
   }
   function age(value) {
-    if (!value) return "Never";
-    const hours = Math.floor((Date.now() - new Date(value).getTime()) / 3600000);
-    if (hours < 1) return "Less than an hour ago";
-    if (hours < 48) return `${hours}h ago`;
-    return `${Math.floor(hours / 24)}d ago`;
+    if (!value) return "Never"; const days = Math.floor((Date.now() - new Date(value).getTime()) / 86400000);
+    return days < 1 ? "Today" : `${days}d ago`;
   }
   function until(value) {
     if (!value) return "unknown";
-    const minutes = Math.max(0, Math.ceil((new Date(value).getTime() - Date.now()) / 60000));
+    const minutes = Math.ceil((new Date(value).getTime() - Date.now()) / 60000);
+    if (minutes <= 0) return "now";
     if (minutes < 60) return `in ${minutes}m`;
-    if (minutes < 2880) return `in ${Math.ceil(minutes / 60)}h`;
+    if (minutes < 1440) return `in ${Math.ceil(minutes / 60)}h`;
     return `in ${Math.ceil(minutes / 1440)}d`;
   }
 </script>
 
-<button class="backdrop" aria-label="Close channel health" on:click={close}></button>
-<div class="panel" role="dialog" aria-modal="true" aria-labelledby="health-title"
-  tabindex="-1" bind:this={panel} on:keydown={keydown}>
-  <header>
-    <div><h2 id="health-title">Channel health</h2><p>Last refresh results for subscribed channels.</p></div>
-    <button class="close" bind:this={closeButton} on:click={close} aria-label="Close channel health">×</button>
-  </header>
+<ModalShell id="channel-health" title="Channel health" onClose={close} wide>
+  <p slot="subtitle">Search, filter, select, and run one bounded bulk operation.</p>
   <div class="filters">
-    <label for="health-filter">Show</label>
-    <select id="health-filter" bind:value={$healthFilter} on:change={changeFilter}>
-      <option value="all">All channels</option>
-      <option value="error">Errors</option>
-      <option value="stale">Not checked in 24 hours</option>
-    </select>
-    <span>{$channelHealth.length} channels</span>
+    <label>Search<input type="search" bind:value={search} placeholder="Channel title or ID" disabled={busy} /></label>
+    <label>Status<select bind:value={status} disabled={busy}><option value="all">All</option><option value="error">Errors</option><option value="ok">OK / unchanged</option></select></label>
+    <label>Schedule<select bind:value={due} disabled={busy}><option value="all">All</option><option value="due">Due now</option><option value="later">Due later</option></select></label>
+    <label>Upload inactivity<select bind:value={inactivity} disabled={busy}><option value="all">All</option><option value="none">No history</option><option value="lt90">Under 90 days</option><option value="90to364">90–364 days</option><option value="365plus">365+ days</option></select></label>
+    <label>Sort<select bind:value={sort} disabled={busy}><option value="title">Title</option><option value="success">Last success</option><option value="upload">Last upload</option><option value="nextDue">Next due</option><option value="status">Status</option></select></label>
   </div>
-  {#if $quotaStatus?.buckets?.general}
-    <section class="quota" aria-label="YouTube API quota">
-      <strong>YouTube API today</strong>
-      <span>{$quotaStatus.buckets.general.used.toLocaleString()} / {$quotaStatus.buckets.general.limit.toLocaleString()} general units</span>
-      <span>{$quotaStatus.buckets.search.used.toLocaleString()} / {$quotaStatus.buckets.search.limit.toLocaleString()} search calls</span>
-      <span>Resets {new Date($quotaStatus.resetAt).toLocaleString()}</span>
-    </section>
-  {/if}
-  <div class="rows">
-    {#if !$channelHealth.length}<p class="empty">No channels match this filter.</p>{/if}
-    {#each $channelHealth as channel (channel.id)}
+  <div class="selection" aria-live="polite">
+    <button type="button" on:click={selectVisible} disabled={busy}>{visible.length && visible.every((row) => selected.has(row.id)) ? "Clear visible" : "Select visible"}</button>
+    <button type="button" on:click={() => selected = new Set()} disabled={busy || !selected.size}>Clear all</button>
+    <strong>{selected.size} selected</strong><span>{visible.length} visible / {$channelHealth.length} total</span>
+    {#if hiddenSelectedCount}<span>{hiddenSelectedCount} selected hidden by filters</span>{/if}
+    <span>Maximum {MAX_BULK_CHANNELS} channels per bulk action.</span>
+    <button type="button" on:click={refreshSelected} disabled={busy || !selected.size}>Refresh</button>
+    <button type="button" on:click={() => favoriteSelected(true)} disabled={busy || !selected.size}>Favorite</button>
+    <button type="button" on:click={() => favoriteSelected(false)} disabled={busy || !selected.size}>Unfavorite</button>
+    <button class="danger" type="button" on:click={deleteSelected} disabled={busy || !selected.size}>Delete</button>
+  </div>
+  <div class="move-box">
+    <label>Direct source folder<select bind:value={sourceFolderId} disabled={busy}><option value="">Choose source</option>{#each folderOptions as folder}<option value={folder.id}>{folder.label}</option>{/each}</select></label>
+    <label>Destination folder<select bind:value={destinationFolderId} disabled={busy}><option value="">Choose destination</option>{#each folderOptions as folder}<option value={folder.id} disabled={folder.id === sourceFolderId}>{folder.label}</option>{/each}</select></label>
+    <button type="button" on:click={moveSelected} disabled={busy || !sourceFolderId || !destinationFolderId || !movableIds.length}>Move {movableIds.length || ""}</button>
+    <p>Only selected channels with a direct membership in the source move. Nested or other-folder memberships stay put.</p>
+  </div>
+  {#if $quotaStatusStale}<p class="quota danger-text">API quota status unavailable.</p>{:else if $quotaStatus?.buckets?.general}<p class="quota">API today: {$quotaStatus.buckets.general.used.toLocaleString()} / {$quotaStatus.buckets.general.limit.toLocaleString()} · {$quotaStatus.buckets.general.remaining.toLocaleString()} left · resets {new Date($quotaStatus.resetAt).toLocaleString()}</p>{/if}
+  <div class="rows" aria-busy={loading || busy}>
+    {#if loading}<p role="status">Loading channels…</p>{:else if !visible.length}<p>No channels match these filters.</p>{/if}
+    {#each visible as channel (channel.id)}
       <article class:error-row={channel.last_refresh_status === "error"}>
-        <div class="name">{channel.favorite ? "★ " : ""}{channel.title}</div>
-        <div class="meta">
-          <span>{channel.last_refresh_status || "Never refreshed"}</span>
-          <span>Attempt {age(channel.last_refresh_attempt_at)}</span>
-          <span>Success {age(channel.last_refreshed_at)}</span>
-          <span>{channel.smart_refresh?.due ? "Due now" : `Next ${until(channel.smart_refresh?.nextDueAt)}`}</span>
-          {#if channel.smart_refresh?.rule}<span>{channel.smart_refresh.rule.label}</span>{/if}
-        </div>
-        {#if channel.last_error}<p class="err">{channel.last_error}</p>{/if}
-        <div class="actions">
-          <button on:click={() => retry(channel)} disabled={retrying === channel.id || deleting === channel.id}>
-            {retrying === channel.id ? "Refreshing…" : "Retry now"}
-          </button>
-          <button class="delete" on:click={() => remove(channel)} disabled={retrying === channel.id || deleting === channel.id}>
-            {deleting === channel.id ? "Deleting…" : "Delete"}
-          </button>
+        <input type="checkbox" checked={selected.has(channel.id)} on:change={() => toggle(channel.id)} aria-label={`Select ${channel.title}`} disabled={busy || (!selected.has(channel.id) && selected.size >= MAX_BULK_CHANNELS)} />
+        <div><h3>{channel.favorite ? "★ " : ""}{channel.title}</h3>
+          <p>{channel.folderIds?.map((id) => folderNames.get(id) || id).join(", ") || "No folder membership"}</p>
+          <p>{channel.last_refresh_status || "Never refreshed"} · Success {age(channel.last_refreshed_at)} · Upload {age(channel.latest_upload_at)} · {channel.smart_refresh?.due ? "Due now" : `Next ${until(channel.smart_refresh?.nextDueAt)}`}</p>
+          {#if channel.last_error}<p class="danger-text">{channel.last_error}</p>{/if}
         </div>
       </article>
     {/each}
   </div>
-  <section class="history" aria-label="Recent refresh reports">
-    <h3>Recent refreshes</h3>
-    {#if !$refreshRuns.length}<p class="empty">No refresh history yet.</p>{/if}
-    {#each $refreshRuns.slice(0, 10) as run (run.id)}
-      <div class="run">
-        <strong>{run.trigger} · {run.requested_mode || run.mode}{run.effective_mode && run.effective_mode !== (run.requested_mode || run.mode) ? ` → ${run.effective_mode}` : ""} · {run.status}</strong>
-        <span>{new Date(run.started_at).toLocaleString()}</span>
-        <span>{run.checked} checked · {run.skipped} skipped · {run.new_videos} new · {run.errors} errors</span>
-        <span>{run.api_units} API units ({run.api_calls} calls) · {run.rss_requests} RSS · {run.shorts_probes} Shorts probes · {run.daily_remaining ?? "?"} left</span>
-        {#if run.rss_fallbacks > 0}<span>{run.rss_fallbacks} RSS fallback{run.rss_fallbacks === 1 ? "" : "s"}{run.fallback_reason ? ` · ${run.fallback_reason}` : ""}</span>{/if}
-        <span>{run.pending_unknown_total || 0} unknown Shorts · {run.pending_reclassified || 0} reclassified</span>
-        {#if run.error}<span class="run-error">{run.error}</span>{/if}
-      </div>
-    {/each}
-  </section>
-</div>
+  <details><summary>Recent refresh reports ({$refreshRuns.length})</summary>{#each $refreshRuns.slice(0,10) as run}<p class:danger-text={run.errors > 0}>{new Date(run.started_at).toLocaleString()} · {run.trigger} · {run.checked} checked · {run.errors || 0} errors · {run.api_units} units · {run.daily_remaining ?? "?"} left</p>{/each}</details>
+</ModalShell>
 
 <style>
-  .backdrop { position: fixed; inset: 0; border: 0; background: var(--overlay); z-index: 250; }
-  .panel { position: fixed; z-index: 260; top: 6vh; bottom: 6vh; left: 50%; transform: translateX(-50%); width: min(760px, 94vw); background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; }
-  header, .filters { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
-  h2 { color: var(--heading); font-size: 1.2rem; }
-  header p, .filters span { color: var(--text-muted); font-size: .82rem; }
-  .close { margin-left: auto; border: 0; background: transparent; color: var(--text); font-size: 1.6rem; padding: 4px 10px; }
-  select, article button { background: var(--button); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; }
-  .filters span { margin-left: auto; }
-  .rows { overflow: auto; padding: 10px; }
-  .quota { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 10px 18px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: .78rem; }
-  .quota strong { color: var(--heading); }
-  article { position: relative; padding: 12px 195px 12px 12px; border-bottom: 1px solid var(--border); min-height: 70px; }
-  article.error-row { border-left: 3px solid var(--danger); }
-  .actions { position: absolute; right: 10px; top: 16px; display: flex; gap: 6px; }
-  article button { cursor: pointer; }
-  article button.delete { color: var(--danger); border-color: var(--danger); }
-  .name { color: var(--heading); font-weight: 700; }
-  .meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--text-muted); font-size: .78rem; }
-  .err { color: var(--danger); font-size: .78rem; overflow-wrap: anywhere; }
-  .empty { text-align: center; color: var(--text-muted); padding: 40px; }
-  .history { padding: 12px 18px; border-top: 1px solid var(--border); max-height: 220px; overflow: auto; }
-  .history h3 { color: var(--heading); font-size: .95rem; margin-bottom: 6px; }
-  .run { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 7px 0; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: .74rem; }
-  .run strong { color: var(--heading); }
-  .run-error { grid-column: 1 / -1; color: var(--danger); overflow-wrap: anywhere; }
-  @media (max-width: 620px) {
-    article { padding-right: 12px; padding-bottom: 54px; }
-    .actions { top: auto; bottom: 10px; }
-  }
+  .filters{display:grid;grid-template-columns:2fr repeat(4,1fr);gap:8px}.filters label,.move-box label{display:grid;gap:3px;color:var(--text-muted);font-size:.7rem}input,select,button{background:var(--button);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:7px 9px;min-width:0}
+  .selection,.move-box{display:flex;align-items:end;gap:8px;flex-wrap:wrap;margin-top:12px;padding:10px;background:var(--button);border-radius:8px}.selection span,.quota,.move-box p{color:var(--text-muted);font-size:.75rem}.move-box p{flex-basis:100%;margin:0}.danger{color:var(--danger);border-color:var(--danger)}
+  .rows{margin-top:10px;max-height:42vh;overflow:auto}article{display:grid;grid-template-columns:auto 1fr;gap:10px;padding:10px;border-bottom:1px solid var(--border)}article.error-row{border-left:3px solid var(--danger)}article h3{font-size:.86rem;color:var(--heading);margin:0}article p,details p{font-size:.72rem;color:var(--text-muted);margin:3px 0}.danger-text{color:var(--danger)!important}.quota{margin:10px 0}details{margin-top:12px;color:var(--heading)}
+  @media(max-width:800px){.filters{grid-template-columns:1fr 1fr}.filters label:first-child{grid-column:1/-1}}
 </style>

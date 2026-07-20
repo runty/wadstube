@@ -25,11 +25,13 @@ function json(data, status = 200) {
 }
 
 test("return-first sort is restored from the URL", () => {
-  loc.search = "?sort=returning";
+  loc.search = "?sort=returning&view=returns";
   feed.initializeUrlState();
   assert.equal(get(feed.sortOrder), "returning");
+  assert.equal(get(feed.viewFilter), "returns");
   loc.search = "";
   feed.sortOrder.set("newest");
+  feed.viewFilter.set("all");
 });
 
 test("cleared and superseded channel loads cannot repopulate stale cache", async () => {
@@ -65,6 +67,7 @@ test("manual refresh and channel retry reload unread badges", async () => {
   let unread = 4;
   let quotaLoads = 0;
   let historyLoads = 0;
+  let returnLoads = 0;
   globalThis.fetch = async (url, options = {}) => {
     const value = String(url);
     if (value === "/api/refresh/folder-a" && options.method === "POST") {
@@ -79,6 +82,7 @@ test("manual refresh and channel retry reload unread badges", async () => {
     if (value === "/api/folders") return json([{ id: "folder-a", unreadCount: unread, children: [] }]);
     if (value === "/api/folders/folder-a/channels") return json([{ id: "channel-a", unreadCount: unread }]);
     if (value.startsWith("/api/channels?")) return json([]);
+    if (value.startsWith("/api/videos/returns?")) { returnLoads++; return json({ count: 0, videoIds: [] }); }
     if (value.startsWith("/api/videos")) return json({ videos: [], hasMore: false });
     if (value === "/api/status/quota") {
       quotaLoads++;
@@ -99,6 +103,32 @@ test("manual refresh and channel retry reload unread badges", async () => {
   assert.equal(get(feed.channelLists)["folder-a"][0].unreadCount, 7);
   assert.ok(quotaLoads >= 2, "manual refresh and retry both reload quota status");
   assert.ok(historyLoads >= 2, "manual refresh and retry both reload run history");
+  assert.ok(returnLoads >= 1, "manual refresh reloads the exact return count");
+});
+
+test("completed manual refresh stays successful when a follow-up folder reload fails", async () => {
+  feed.clearChannelLists();
+  feed.activeFolder.set("folder-a");
+  feed.activeChannelId.set(null);
+  globalThis.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === "/api/refresh/folder-a" && options.method === "POST") {
+      return new Response('{"type":"summary","new_videos":1,"checked":1,"errors":0,"api_units":1}\n', {
+        status: 200, headers: { "Content-Type": "application/x-ndjson" },
+      });
+    }
+    if (value === "/api/folders") return json({ error: "folders unavailable" }, 503);
+    if (value.startsWith("/api/videos/returns?")) return json({ count: 0, videoIds: [] });
+    if (value.startsWith("/api/videos")) return json({ videos: [], hasMore: false });
+    if (value === "/api/status/quota") return json({ buckets: { general: { remaining: 9998 } } });
+    if (value.startsWith("/api/status/refresh-runs")) return json([]);
+    throw new Error(`Unexpected fetch ${value}`);
+  };
+  const result = await feed.refreshFolder("folder-a");
+  assert.equal(result.new_videos, 1);
+  assert.equal(result.api_units, 1);
+  assert.equal(result.reloadFailures, 1);
+  assert.equal(get(feed.refreshing), false);
 });
 
 test("deleting a folder clears the active channel", async () => {
@@ -210,6 +240,116 @@ test("failed retry still reloads quota and refresh reports", async () => {
 test("subscription import remains successful when post-import reload fails", async () => {
   globalThis.fetch = async () => { throw new Error("offline"); };
   assert.deepEqual(await feed.resetAfterSubscriptionImport(), { reloadFailures: 2 });
+});
+
+test("return count and acknowledgement use exact scoped APIs rather than loaded page length", async () => {
+  feed.activeFolder.set("folder-a");
+  feed.activeChannelId.set("channel-a");
+  feed.searchQuery.set("needle");
+  feed.viewFilter.set("returns");
+  feed.favoritesOnly.set(true);
+  let remaining = 7;
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const value = String(url); calls.push({ value, method: options.method || "GET", body: options.body });
+    if (value.startsWith("/api/videos/returns?") && (!options.method || options.method === "GET")) {
+      return json({ count: remaining, videoIds: remaining ? ["return-1"] : [] });
+    }
+    if (value === "/api/videos/returns/acknowledge" && options.method === "POST") {
+      remaining = 0;
+      return json({ ok: true, requested: 1, acknowledged: 1 });
+    }
+    if (value.startsWith("/api/videos?")) return json({ videos: [], hasMore: false });
+    throw new Error(`Unexpected fetch ${value}`);
+  };
+  assert.equal(await feed.loadReturnCount(), 7);
+  assert.equal(get(feed.returnCount), 7);
+  const result = await feed.acknowledgeReturnVideos(["return-1"]);
+  assert.equal(result.acknowledged, 1);
+  assert.equal(get(feed.returnCount), 0);
+  assert.match(calls[0].value, /folder=folder-a/);
+  assert.match(calls[0].value, /channel=channel-a/);
+  assert.match(calls[0].value, /q=needle/);
+  assert.equal(JSON.parse(calls.find((call) => call.method === "POST").body).videoIds[0], "return-1");
+  feed.viewFilter.set("all"); feed.favoritesOnly.set(false); feed.searchQuery.set(""); feed.activeChannelId.set(null);
+});
+
+test("late return-count responses cannot overwrite the current scope", async () => {
+  const pending = [];
+  globalThis.fetch = () => new Promise((resolve) => pending.push(resolve));
+  const oldLoad = feed.loadReturnCount({ folder: "old-folder" });
+  await Promise.resolve();
+  const currentLoad = feed.loadReturnCount({ folder: "current-folder" });
+  await Promise.resolve();
+  pending[1](json({ count: 2, videoIds: [] }));
+  await currentLoad;
+  pending[0](json({ count: 99, videoIds: [] }));
+  await oldLoad;
+  assert.equal(get(feed.returnCount), 2);
+});
+
+test("acknowledgement and resolver mutations remain successful when ancillary reloads fail", async () => {
+  globalThis.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === "/api/videos/returns/acknowledge" && options.method === "POST") {
+      return json({ ok: true, acknowledged: 1 });
+    }
+    if (value.includes("/resolve") && options.method === "POST") {
+      return json({ ok: true, channelName: "Resolved channel" });
+    }
+    throw new Error("reload offline");
+  };
+  const acknowledged = await feed.acknowledgeReturnVideos(["video-1"]);
+  assert.equal(acknowledged.acknowledged, 1);
+  assert.equal(acknowledged.reloadFailures, 2);
+  const resolved = await feed.resolveUnresolvedSubscription("folder", "legacy", "UCaaaaaaaaaaaaaaaaaaaaaa");
+  assert.equal(resolved.channelName, "Resolved channel");
+  assert.equal(resolved.reloadFailures, 2);
+});
+
+test("bulk reload repopulates expanded folder caches after success and preserves them after failure", async () => {
+  feed.activeFolder.set("__all__");
+  feed.activeChannelId.set("UCaaaaaaaaaaaaaaaaaaaaaa");
+  feed.channelLists.set({ folder: [{ id: "UCaaaaaaaaaaaaaaaaaaaaaa" }] });
+  let channelReloads = 0;
+  globalThis.fetch = async (url) => {
+    const value = String(url);
+    if (value === "/api/folders") return json([]);
+    if (value === "/api/folders/folder/channels") {
+      channelReloads++;
+      return json([{ id: "UCbbbbbbbbbbbbbbbbbbbbbb" }]);
+    }
+    if (value.startsWith("/api/channels?")) return json([]);
+    if (value === "/api/status/quota") return json({ buckets: { general: { remaining: 10 } } });
+    if (value.startsWith("/api/status/refresh-runs")) return json([]);
+    if (value.startsWith("/api/videos/returns?")) return json({ count: 0, videoIds: [] });
+    if (value.startsWith("/api/videos")) return json({ videos: [], hasMore: false });
+    throw new Error(`Unexpected fetch ${value}`);
+  };
+  const result = await feed.reloadAfterBulkAction({ deletedIds: ["UCaaaaaaaaaaaaaaaaaaaaaa"] });
+  assert.equal(result.reloadFailures, 0);
+  assert.equal(get(feed.activeChannelId), null);
+  assert.equal(channelReloads, 1);
+  assert.deepEqual(get(feed.channelLists), { folder: [{ id: "UCbbbbbbbbbbbbbbbbbbbbbb" }] });
+
+  const preserved = [{ id: "UCcccccccccccccccccccccc" }];
+  feed.channelLists.set({ folder: preserved });
+  channelReloads = 0;
+  const failedMutationReload = await feed.reloadAfterBulkAction({ mutationSucceeded: false });
+  assert.equal(failedMutationReload.reloadFailures, 0);
+  assert.equal(channelReloads, 0);
+  assert.deepEqual(get(feed.channelLists), { folder: preserved });
+});
+
+test("quota polling marks old quota unavailable until a successful reload", async () => {
+  feed.quotaStatus.set({ buckets: { general: { remaining: 123 } } });
+  globalThis.fetch = async () => { throw new Error("quota offline"); };
+  await assert.rejects(() => feed.loadQuotaStatus(), /quota offline/);
+  assert.equal(get(feed.quotaStatusStale), true);
+  globalThis.fetch = async () => json({ buckets: { general: { remaining: 122 } } });
+  await feed.loadQuotaStatus();
+  assert.equal(get(feed.quotaStatusStale), false);
+  assert.equal(get(feed.quotaStatus).buckets.general.remaining, 122);
 });
 
 test("unresolved subscriptions have an explicit non-filterable UI state", () => {

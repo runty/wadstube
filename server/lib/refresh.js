@@ -157,8 +157,7 @@ async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
     let quotaStatus = null;
     try { quotaStatus = quota?.status() || null; } catch {}
     const dailyRemaining = quotaStatus?.buckets?.general?.remaining ?? null;
-    if (runId) db.finishRefreshRun?.(runId, summary, metrics, { status, error, dailyRemaining });
-    return {
+    const finalizedSummary = {
       ...summary,
       skipped,
       run_id: runId,
@@ -174,6 +173,15 @@ async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
       daily_remaining: dailyRemaining,
       quota: quotaStatus,
     };
+    if (runId) {
+      db.finishRefreshRun?.(
+        runId,
+        finalizedSummary,
+        metrics,
+        { status, error, dailyRemaining },
+      );
+    }
+    return finalizedSummary;
   };
   if (!ids.length) {
     return finishRun({

@@ -1,4 +1,5 @@
 import { writable, get } from "svelte/store";
+import { acknowledgeAllReturnBatches, acknowledgeReturns, getReturns, resolveSubscription } from "./operations.js";
 
 export const folders = writable([]);
 export const videos = writable([]);
@@ -15,9 +16,13 @@ export const favoritesOnly = writable(false);
 export const density = writable("grid");
 export const sortOrder = writable("newest");
 export const showHealth = writable(false);
+export const showOperations = writable(false);
+export const showRefreshPreview = writable(false);
+export const returnCount = writable(0);
 export const channelHealth = writable([]);
 export const healthFilter = writable("all");
 export const quotaStatus = writable(null);
+export const quotaStatusStale = writable(false);
 export const refreshRuns = writable([]);
 // One shared channel-list cache prevents recursive sidebar nodes and the
 // management dialog from showing conflicting favorite/unread metadata.
@@ -225,7 +230,8 @@ export async function loadChannels(folderId, force = false) {
 
 async function reloadCachedChannelLists() {
   const ids = Object.keys(get(channelLists));
-  await Promise.allSettled(ids.map((id) => loadChannels(id, true)));
+  const results = await Promise.allSettled(ids.map((id) => loadChannels(id, true)));
+  return { reloadFailures: results.filter((result) => result.status === "rejected").length };
 }
 
 export async function addChannelToFolder(folderName, urlOrId) {
@@ -332,6 +338,85 @@ export async function setChannelFavorite(channelId, favorite) {
   return data.channel;
 }
 
+export function snapshotCurrentScope() {
+  return {
+    folder: get(activeFolder), channelId: get(activeChannelId), q: get(searchQuery),
+    view: get(viewFilter), favorites: get(favoritesOnly), sort: get(sortOrder),
+  };
+}
+
+let _returnCountSeq = 0;
+export async function loadReturnCount(scope = snapshotCurrentScope()) {
+  const seq = ++_returnCountSeq;
+  try {
+    const result = await getReturns(scope, 1);
+    if (seq === _returnCountSeq) returnCount.set(result.count || 0);
+    return result.count || 0;
+  } catch (err) {
+    if (seq !== _returnCountSeq) return get(returnCount);
+    throw err;
+  }
+}
+
+export function listCurrentReturns(limit = 5000) {
+  return getReturns(snapshotCurrentScope(), limit);
+}
+
+export function listReturnsForScope(scope, limit = 5000) {
+  return getReturns(scope, limit);
+}
+
+async function reloadCurrentVideosAndReturns() {
+  const scope = snapshotCurrentScope();
+  const results = await Promise.allSettled([
+    loadVideos(scope.folder, {
+      channelId: scope.channelId, q: scope.q, view: scope.view,
+      favorites: scope.favorites, sort: scope.sort,
+    }),
+    loadReturnCount(scope),
+  ]);
+  return results.filter((result) => result.status === "rejected").length;
+}
+
+export async function acknowledgeReturnVideos(videoIds) {
+  const result = await acknowledgeReturns(videoIds);
+  const reloadFailures = await reloadCurrentVideosAndReturns();
+  return { ...result, reloadFailures };
+}
+
+export async function acknowledgeAllReturns(scope = snapshotCurrentScope(), options = {}) {
+  const result = await acknowledgeAllReturnBatches(scope, options);
+  const reloadFailures = await reloadCurrentVideosAndReturns();
+  return { ...result, reloadFailures };
+}
+
+export async function resolveUnresolvedSubscription(folderId, legacyId, urlOrId) {
+  const result = await resolveSubscription(folderId, legacyId, urlOrId);
+  const reloads = await Promise.allSettled([loadFolders(), loadChannels(folderId, true)]);
+  return { ...result, reloadFailures: reloads.filter((entry) => entry.status === "rejected").length };
+}
+
+export async function reloadAfterBulkAction({ deletedIds = [], mutationSucceeded = true } = {}) {
+  const deleted = new Set(deletedIds);
+  if (mutationSucceeded && deleted.has(get(activeChannelId))) activeChannelId.set(null);
+  const cachedFolderIds = Object.keys(get(channelLists));
+  if (mutationSucceeded) clearChannelLists();
+  const scope = snapshotCurrentScope();
+  const reloads = await Promise.allSettled([
+    loadFolders(),
+    loadChannelHealth("all"),
+    loadQuotaStatus(),
+    loadRefreshRuns(),
+    loadVideos(scope.folder, {
+      channelId: scope.channelId, q: scope.q, view: scope.view,
+      favorites: scope.favorites, sort: scope.sort,
+    }),
+    loadReturnCount(scope),
+    ...(mutationSucceeded ? cachedFolderIds.map((folderId) => loadChannels(folderId, true)) : []),
+  ]);
+  return { reloadFailures: reloads.filter((entry) => entry.status === "rejected").length };
+}
+
 export async function loadChannelHealth(filter = get(healthFilter)) {
   const params = new URLSearchParams();
   if (filter !== "all") params.set("status", filter);
@@ -340,12 +425,22 @@ export async function loadChannelHealth(filter = get(healthFilter)) {
   channelHealth.set(await resp.json());
 }
 
+let _quotaStatusSeq = 0;
 export async function loadQuotaStatus() {
-  const resp = await fetch(`${API}/api/status/quota`);
-  if (!resp.ok) throw new Error(`Failed to load quota status (${resp.status})`);
-  const value = await resp.json();
-  quotaStatus.set(value);
-  return value;
+  const seq = ++_quotaStatusSeq;
+  try {
+    const resp = await fetch(`${API}/api/status/quota`);
+    if (!resp.ok) throw new Error(`Failed to load quota status (${resp.status})`);
+    const value = await resp.json();
+    if (seq === _quotaStatusSeq) {
+      quotaStatus.set(value);
+      quotaStatusStale.set(false);
+    }
+    return value;
+  } catch (err) {
+    if (seq === _quotaStatusSeq) quotaStatusStale.set(true);
+    throw err;
+  }
 }
 
 export async function loadRefreshRuns(limit = 20) {
@@ -412,7 +507,7 @@ export function initializeUrlState() {
   activeFolder.set(params.get("folder") || "__all__");
   activeChannelId.set(params.get("channel"));
   searchQuery.set(params.get("q") || "");
-  viewFilter.set(["all", "unread", "starred", "hidden"].includes(params.get("view")) ? params.get("view") : "all");
+  viewFilter.set(["all", "unread", "starred", "hidden", "returns"].includes(params.get("view")) ? params.get("view") : "all");
   favoritesOnly.set(params.get("favorites") === "1");
   density.set(["grid", "compact", "list"].includes(params.get("density")) ? params.get("density") : "grid");
   sortOrder.set(["newest", "oldest", "favorite", "returning"].includes(params.get("sort")) ? params.get("sort") : "newest");
@@ -515,15 +610,25 @@ export async function refreshFolder(folder) {
     // Don't pretend it was successful.
     if (!summary) throw new Error("Refresh stream ended before completion");
 
-    await Promise.all([loadFolders(), reloadCachedChannelLists(), loadVideos(folder, {
-      channelId: get(activeChannelId) || null,
-      q: get(searchQuery) || null,
-      view: get(viewFilter),
-      favorites: get(favoritesOnly),
-      sort: get(sortOrder),
-    })]);
-    await Promise.allSettled([loadQuotaStatus(), loadRefreshRuns()]);
-    return summary;
+    const reloads = await Promise.allSettled([
+      loadFolders(),
+      reloadCachedChannelLists(),
+      loadVideos(folder, {
+        channelId: get(activeChannelId) || null,
+        q: get(searchQuery) || null,
+        view: get(viewFilter),
+        favorites: get(favoritesOnly),
+        sort: get(sortOrder),
+      }),
+      loadQuotaStatus(),
+      loadRefreshRuns(),
+      loadReturnCount(),
+    ]);
+    const directFailures = reloads.filter((result) => result.status === "rejected").length;
+    const channelReloadFailures = reloads[1].status === "fulfilled"
+      ? reloads[1].value.reloadFailures
+      : 0;
+    return { ...summary, reloadFailures: directFailures + channelReloadFailures };
   } catch (err) {
     const msg = (err?.message || "").trim() || "Something went wrong";
     if (!err?.message) console.error("refresh failed without a message:", err);

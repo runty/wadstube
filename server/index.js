@@ -7,13 +7,15 @@ const { loadData, getFolderTreeSummary, syncChannelNames, saveData,
   require("./lib/data");
 const { resolveUrl, httpStatusForYoutubeError } = require("./lib/youtube");
 const { restoreData } = require("./lib/restore");
-const { securityHeaders, corsOriginPolicy, rateLimit } = require("./lib/security");
+const { securityHeaders, corsOriginPolicy, rateLimit, postOnly } = require("./lib/security");
 const Db = require("./lib/db");
 const { migrateCacheJsonIfNeeded } = require("./lib/migrate-cache");
 const { loadPolicy } = require("./lib/refresh-policy");
+const { loadSmartRefreshPolicy } = require("./lib/settings");
 const { QuotaLedger, parseLimits } = require("./lib/quota");
 const { mountFrontend } = require("./lib/frontend");
 
+const STARTED_AT = new Date().toISOString();
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DB_FILE = path.join(DATA_DIR, "wadstube.db");
@@ -21,10 +23,10 @@ const MAX_VIDEOS = parseInt(process.env.MAX_VIDEOS || "50", 10);
 const REFRESH_MODE = (process.env.REFRESH_MODE || "rss").toLowerCase();
 const REFRESH_MODE_MANUAL = (process.env.REFRESH_MODE_MANUAL || REFRESH_MODE).toLowerCase();
 const API_KEY = process.env.YOUTUBE_API_KEY;
-let SMART_REFRESH_POLICY;
+let DEFAULT_SMART_REFRESH_POLICY;
 let QUOTA_LIMITS;
 try {
-  SMART_REFRESH_POLICY = loadPolicy();
+  DEFAULT_SMART_REFRESH_POLICY = loadPolicy();
   QUOTA_LIMITS = parseLimits();
 } catch (err) {
   console.error(`Configuration error: ${err.message}`);
@@ -46,6 +48,7 @@ if (!API_KEY && REFRESH_MODE_MANUAL === "api") {
 const data = loadData(DATA_DIR);
 const db = new Db(DB_FILE);
 migrateCacheJsonIfNeeded(db, DATA_DIR);
+const storedSmartRefresh = loadSmartRefreshPolicy(db, DEFAULT_SMART_REFRESH_POLICY);
 const purgedStartupOrphans = db.purgeOrphanChannels(allReferencedChannelIds(data));
 if (purgedStartupOrphans) {
   console.warn(`[startup] purged ${purgedStartupOrphans} orphaned or unresolved DB channel row(s)`);
@@ -61,9 +64,13 @@ const appState = {
   db,
   apiKey: API_KEY,
   maxVideos: MAX_VIDEOS,
+  startedAt: STARTED_AT,
+  defaultMode: REFRESH_MODE,
   manualMode: REFRESH_MODE_MANUAL,
   refreshLock: null,
-  smartPolicy: SMART_REFRESH_POLICY,
+  defaultSmartPolicy: DEFAULT_SMART_REFRESH_POLICY,
+  smartPolicy: storedSmartRefresh.policy,
+  smartPolicySource: storedSmartRefresh.source,
   refreshIntervalMinutes: 0,
   quota,
   activeTasks: new Set(),
@@ -86,6 +93,7 @@ console.log(`DB: ${stats.channelCount} channels, ${stats.videoCount} videos`);
 // Nightly backups (GFS retention: 4 daily + 4 weekly + 4 monthly)
 const { scheduleBackups } = require("./lib/backup");
 const backupController = scheduleBackups(DATA_DIR, db, appState);
+appState.backupController = backupController;
 
 // Express app
 const app = express();
@@ -114,7 +122,7 @@ app.use(
 );
 app.use(
   "/api/refresh",
-  rateLimit({ windowMs: 60_000, max: 10, name: "refresh" }),
+  postOnly(rateLimit({ windowMs: 60_000, max: 10, name: "refresh" })),
 );
 app.use(
   "/api/resolve-url",
@@ -130,6 +138,7 @@ app.use("/api/videos", require("./routes/videos")(appState));
 app.use("/api/channels", require("./routes/channels")(appState));
 app.use("/api/refresh", require("./routes/refresh")(appState));
 app.use("/api/status", require("./routes/status")(appState));
+app.use("/api/settings", require("./routes/settings")(appState));
 
 // Backup — download tube.json
 app.get("/api/backup", (req, res) => {

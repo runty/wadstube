@@ -13,6 +13,9 @@ module.exports = function (appState) {
     getChannelList,
     renameChannel,
     moveChannel,
+    collectAllChannels,
+    getUnresolvedChannelMembership,
+    replaceUnresolvedChannel,
     saveData,
     allReferencedChannelIds,
     isResolvedChannel,
@@ -78,6 +81,19 @@ module.exports = function (appState) {
     return getFolderTreeSummary(appState.data).map((folder, index) =>
       enrich(folder, appState.data.folders[index]),
     );
+  }
+
+  function knownChannelTitle(channelId) {
+    const databaseTitle = appState.db.getChannelMeta(channelId)?.title;
+    if (databaseTitle && databaseTitle !== "Unknown") return databaseTitle;
+    for (const root of appState.data.folders || []) {
+      const membership = collectAllChannels(root).find((channel) =>
+        isResolvedChannel(channel) && channel.id === channelId &&
+        typeof channel.name === "string" && channel.name.trim() &&
+        channel.name !== "Unknown");
+      if (membership) return membership.name;
+    }
+    return databaseTitle || "Unknown";
   }
 
   function validateFolderName(name) {
@@ -185,6 +201,10 @@ module.exports = function (appState) {
 
       if (!channelId) return res.status(400).json({ error: "channelId or url required" });
 
+      if (!channelName || channelName === "Unknown") {
+        channelName = knownChannelTitle(channelId);
+      }
+
       const folderId = resolveFolderId(req.params.name, res);
       addChannel(appState.data, folderId, channelId, channelName);
       if (!appState.db.getChannelMeta(channelId)) {
@@ -194,6 +214,82 @@ module.exports = function (appState) {
       res.json({ ok: true, channelId, channelName, folders: summary() });
     } catch (err) {
       res.status(httpStatusForYoutubeError(err, 400)).json({ error: err.message });
+    }
+  });
+
+  router.post("/:name/channels/:legacyId/resolve", channelAddLimit, async (req, res) => {
+    try {
+      const folderId = resolveFolderId(req.params.name, res);
+      const value = req.body?.urlOrId ?? req.body?.url;
+      if (typeof value !== "string" || !value.trim()) {
+        return res.status(400).json({ error: "urlOrId or url is required" });
+      }
+      // Reject stale/malicious legacy IDs before URL resolution can consume
+      // network or quota. replaceUnresolvedChannel performs the same check on
+      // the cloned current state again under the refresh mutation lock.
+      getUnresolvedChannelMembership(appState.data, folderId, req.params.legacyId);
+      let resolved;
+      if (/^UC[A-Za-z0-9_-]{22}$/.test(value.trim())) {
+        const channelId = value.trim();
+        resolved = { channelId, channelTitle: knownChannelTitle(channelId) };
+      } else {
+        resolved = await resolveUrl(appState.apiKey, value.trim(), { quota: appState.quota });
+        if (!resolved.channelTitle || resolved.channelTitle === "Unknown") {
+          resolved.channelTitle = knownChannelTitle(resolved.channelId);
+        }
+      }
+      let replacement;
+      await whileRefreshIdle(() => {
+        const originalData = structuredClone(appState.data);
+        const nextData = structuredClone(appState.data);
+        replacement = replaceUnresolvedChannel(
+          nextData,
+          folderId,
+          req.params.legacyId,
+          { channelId: resolved.channelId, channelName: resolved.channelTitle },
+        );
+        try {
+          saveData(appState.dataDir, nextData);
+        } catch (err) {
+          err.httpStatus = 500;
+          throw err;
+        }
+        appState.data = nextData;
+        try {
+          appState.db.upsertChannel(resolved.channelId, resolved.channelTitle || "Unknown");
+        } catch (dbError) {
+          try {
+            saveData(appState.dataDir, originalData);
+            appState.data = originalData;
+          } catch (recoveryError) {
+            appState.data = nextData;
+            const err = new Error(
+              `Resolved-channel database update failed (${dbError.message}); ` +
+                `subscription recovery also failed (${recoveryError.message}). ` +
+                "The saved replacement remains active and requires recovery.",
+            );
+            err.httpStatus = 500;
+            throw err;
+          }
+          const err = new Error(
+            `Resolved-channel database update failed; subscription changes were rolled back: ${dbError.message}`,
+          );
+          err.httpStatus = 500;
+          throw err;
+        }
+      });
+      res.json({
+        ok: true,
+        folderId,
+        replacedLegacyId: req.params.legacyId,
+        channelId: replacement.id,
+        channelName: replacement.name,
+        channel: replacement,
+      });
+    } catch (err) {
+      const status = err.httpStatus ||
+        (err.status === 409 ? 409 : httpStatusForYoutubeError(err, 400));
+      res.status(status).json({ error: err.message });
     }
   });
 

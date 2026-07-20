@@ -15,6 +15,12 @@
     loadingMore,
     loadVideos,
     loadMoreVideos,
+    loadReturnCount,
+    listReturnsForScope,
+    acknowledgeAllReturns,
+    snapshotCurrentScope,
+    returnCount,
+    toast,
     error,
   } from "../stores/feed.js";
 
@@ -44,6 +50,35 @@
     }).catch((err) => {
       error.set(err?.message || "Failed to load videos");
     });
+    loadReturnCount().catch((err) => { returnCount.set(0); error.set(err.message); });
+  }
+
+  let acknowledgingAll = false;
+  let acknowledgementProgress = "";
+  async function acknowledgeAll() {
+    acknowledgingAll = true;
+    acknowledgementProgress = "Loading…";
+    try {
+      const scope = snapshotCurrentScope();
+      const exact = await listReturnsForScope(scope, 5000);
+      if (!exact.videoIds?.length) { returnCount.set(0); return; }
+      if (!confirm(
+        `Acknowledge highlighted returns in this selected scope in batches? ${exact.count} ` +
+        `currently listed. Returns arriving while this runs may also be included.`,
+      )) return;
+      const result = await acknowledgeAllReturns(scope, {
+        initial: exact,
+        onProgress: ({ acknowledged, batches }) => {
+          acknowledgementProgress = `· ${acknowledged} changed · ${batches} batch${batches === 1 ? "" : "es"}`;
+        },
+      });
+      const reloadWarning = result.reloadFailures ? ` · ${result.reloadFailures} view reload${result.reloadFailures === 1 ? "" : "s"} failed` : "";
+      const message = result.complete
+        ? `Return drain finished · ${result.acknowledged} changed across ${result.batches} batch${result.batches === 1 ? "" : "es"} · none remained at the final check${reloadWarning}`
+        : `Return drain stopped · ${result.acknowledged} changed across ${result.batches} batch${result.batches === 1 ? "" : "es"} · ${result.remaining ?? "an unknown number"} remained at the last check${result.error ? ` · ${result.error}` : ""}${reloadWarning}`;
+      toast.set({ message, type: result.complete && !result.reloadFailures ? "success" : "warning", durationMs: 10000 });
+    } catch (err) { error.set(err.message); }
+    finally { acknowledgingAll = false; acknowledgementProgress = ""; }
   }
 
   $: {
@@ -104,8 +139,14 @@
         <option value="unread">Unread</option>
         <option value="starred">Starred videos</option>
         <option value="hidden">Hidden</option>
+        <option value="returns">Returns ({$returnCount})</option>
       </select>
     </label>
+    {#if $viewFilter === "returns" && $returnCount > 0}
+      <button class="ack-all" type="button" on:click={acknowledgeAll} disabled={acknowledgingAll}>
+        {acknowledgingAll ? `Draining returns ${acknowledgementProgress}` : `Acknowledge returns (${$returnCount} now)`}
+      </button>
+    {/if}
     <label class="check"><input type="checkbox" bind:checked={$favoritesOnly} /> Favorite channels</label>
     <label>Sort
       <select bind:value={$sortOrder}>
@@ -160,7 +201,8 @@
   }
   .feed-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; color: var(--text-muted); font-size: .8rem; }
   .feed-toolbar label { display: inline-flex; align-items: center; gap: 6px; }
-  .feed-toolbar select, .density button { color: var(--text); background: var(--button); border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px; }
+  .feed-toolbar select, .density button, .ack-all { color: var(--text); background: var(--button); border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px; }
+  .ack-all { color: var(--accent); cursor: pointer; }
   .density { display: inline-flex; margin-left: auto; }
   .density button { border-radius: 0; cursor: pointer; }
   .density button:first-child { border-radius: 7px 0 0 7px; }

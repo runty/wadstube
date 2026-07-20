@@ -79,7 +79,7 @@ test("legacy DB migration preserves data and separates visible retention", (t) =
 
   const db = new Db(file);
   t.after(() => db.close());
-  assert.equal(db.db.pragma("user_version", { simple: true }), 9);
+  assert.equal(db.db.pragma("user_version", { simple: true }), 11);
   assert.deepEqual(
     db.db
       .prepare("SELECT video_id, short_status FROM videos ORDER BY video_id")
@@ -231,8 +231,13 @@ test("reader and channel preference APIs expose durable state", async (t) => {
   assert.equal(response.headers.get("deprecation"), null);
 
   response = await fetch(`${base}/refresh/Empty`, { method: "POST" });
-  assert.equal(response.status, 404);
+  assert.equal(response.status, 200);
   assert.equal(response.headers.get("deprecation"), "true");
+  assert.equal(
+    (await response.text()).trim().split("\n").map((line) => JSON.parse(line))
+      .some((event) => event.type === "summary"),
+    true,
+  );
 
   response = await fetch(`${base}/channels`);
   assert.equal((await response.json()).some((channel) => channel.id === CHANNEL_B), true,
@@ -609,6 +614,7 @@ test("allowlisted CORS supports preflight and public proxy origin", async (t) =>
   app.use(corsOriginPolicy(["https://ui.example"], "https://tube.example"));
   app.get("/api/value", (_req, res) => res.json({ ok: true }));
   app.post("/api/value", (_req, res) => res.json({ ok: true }));
+  app.put("/api/value", (_req, res) => res.json({ ok: true }));
   const server = await new Promise((resolve) => {
     const listening = app.listen(0, "127.0.0.1", () => resolve(listening));
   });
@@ -627,6 +633,28 @@ test("allowlisted CORS supports preflight and public proxy origin", async (t) =>
   assert.equal(preflight.status, 204);
   assert.equal(preflight.headers.get("access-control-allow-origin"), "https://ui.example");
   assert.match(preflight.headers.get("access-control-allow-methods"), /POST/);
+
+  const putPreflight = await fetch(base, {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://ui.example",
+      "Access-Control-Request-Method": "PUT",
+      "Access-Control-Request-Headers": "content-type",
+    },
+  });
+  assert.equal(putPreflight.status, 204);
+  assert.equal(putPreflight.headers.get("access-control-allow-origin"), "https://ui.example");
+  assert.match(putPreflight.headers.get("access-control-allow-methods"), /PUT/);
+  const allowedPut = await fetch(base, {
+    method: "PUT",
+    headers: { Origin: "https://ui.example" },
+  });
+  assert.equal(allowedPut.status, 200);
+  assert.equal(allowedPut.headers.get("access-control-allow-origin"), "https://ui.example");
+  assert.equal(
+    (await fetch(base, { method: "PUT", headers: { Origin: "https://evil.example" } })).status,
+    403,
+  );
 
   const publicOrigin = await fetch(base, {
     method: "POST",

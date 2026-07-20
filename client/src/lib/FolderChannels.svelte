@@ -1,6 +1,7 @@
 <script>
   import { onMount } from "svelte";
-  import { showChannelsFor, folders, channelLists, loadChannels, removeChannelFromFolder, addChannelToFolder, setChannelFavorite, error, toast } from "../stores/feed.js";
+  import ModalShell from "./ModalShell.svelte";
+  import { showChannelsFor, folders, channelLists, loadChannels, removeChannelFromFolder, addChannelToFolder, setChannelFavorite, resolveUnresolvedSubscription, error, toast } from "../stores/feed.js";
   import {
     isUnresolvedChannel, UNRESOLVED_CHANNEL_HELP, UNRESOLVED_CHANNEL_LABEL,
     ownValue,
@@ -10,9 +11,8 @@
   let addUrl = "";
   let adding = false;
   let dragOver = false;
-  let panel;
-  let closeButton;
-  let previouslyFocused;
+  let resolveInputs = {};
+  let resolvingId = null;
 
   function findFolder(rows, id) {
     for (const row of rows) {
@@ -27,29 +27,16 @@
   $: unresolvedCount = channels.filter(isUnresolvedChannel).length;
 
   onMount(() => {
-    previouslyFocused = document.activeElement;
-    closeButton?.focus();
     (async () => {
       if (!$showChannelsFor) return;
       try { await loadChannels($showChannelsFor, true); }
       catch (err) { error.set(err.message); }
       finally { loading = false; }
     })();
-    return () => previouslyFocused?.focus?.();
   });
 
   function close() {
     showChannelsFor.set(null);
-  }
-
-  function handleDialogKeydown(e) {
-    if (e.key === "Escape") return close();
-    if (e.key !== "Tab") return;
-    const items = [...panel.querySelectorAll("button, input, a[href], [tabindex]:not([tabindex='-1'])")].filter((item) => !item.disabled);
-    if (!items.length) return;
-    const first = items[0], last = items.at(-1);
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   }
 
   async function favorite(channel) {
@@ -102,27 +89,31 @@
     const url = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain") || "";
     if (url.trim()) await handleAdd(url.trim());
   }
+  function resolveValue(channel) { return ownValue(resolveInputs, channel.id, channel.id); }
+  function setResolveValue(channel, value) { resolveInputs = { ...resolveInputs, [channel.id]: value }; }
+  async function resolveChannel(channel) {
+    const value = resolveValue(channel).trim();
+    if (!value) return;
+    resolvingId = channel.id;
+    try {
+      const result = await resolveUnresolvedSubscription($showChannelsFor, channel.id, value);
+      toast.set({
+        message: `Resolved ${result.channelName || channel.name}${result.reloadFailures ? ` · ${result.reloadFailures} view reload${result.reloadFailures === 1 ? "" : "s"} failed` : ""}`,
+        type: result.reloadFailures ? "warning" : "success",
+      });
+      const next = { ...resolveInputs }; delete next[channel.id]; resolveInputs = next;
+    } catch (err) { error.set(err.message); }
+    finally { resolvingId = null; }
+  }
 </script>
 
-<button class="backdrop" on:click={close} aria-label="Close channel manager"></button>
-<div
-  class="panel"
-  role="dialog"
-  aria-modal="true"
-  aria-labelledby="channels-title"
-  tabindex="-1"
-  bind:this={panel}
-  on:keydown={handleDialogKeydown}
-  class:drag-over={dragOver}
+<ModalShell id="folder-channels" title={folderName} onClose={close}>
+  <p slot="subtitle">{channels.length} channels · manage favorites, unresolved subscriptions, and additions.</p>
+<div class="manager" class:drag-over={dragOver} role="region" aria-label="Channel manager drop area"
   on:dragover={handleDragOver}
   on:dragleave={handleDragLeave}
   on:drop={handleDrop}
 >
-  <div class="panel-header">
-    <h2 id="channels-title">{folderName}</h2>
-    <span class="channel-count">{channels.length} channels</span>
-    <button class="close-btn" bind:this={closeButton} on:click={close} aria-label="Close channel manager">&times;</button>
-  </div>
 
   <div class="add-bar">
     <input
@@ -154,11 +145,18 @@
     {:else if channels.length === 0}
       <p class="status-msg">No channels in this folder.</p>
     {:else}
-      {#each channels as ch}
+      {#each channels as ch, index}
         <div class="channel-row" class:unresolved={isUnresolvedChannel(ch)}>
           {#if isUnresolvedChannel(ch)}
-            <span class="channel-link" title={UNRESOLVED_CHANNEL_HELP}>{ch.name}</span>
-            <span class="unresolved-label">{UNRESOLVED_CHANNEL_LABEL}</span>
+            <div class="resolve-block">
+              <span class="channel-link" title={UNRESOLVED_CHANNEL_HELP}>{ch.name} · {UNRESOLVED_CHANNEL_LABEL}</span>
+              <div class="resolve-controls">
+                <label class="sr-only" for={`resolve-${index}`}>Resolve {ch.name}</label>
+                <input id={`resolve-${index}`} value={resolveValue(ch)} on:input={(event) => setResolveValue(ch, event.currentTarget.value)} disabled={!!resolvingId} />
+                <button type="button" on:click={() => resolveChannel(ch)} disabled={!!resolvingId || !resolveValue(ch).trim()}>{resolvingId === ch.id ? "Resolving…" : "Resolve"}</button>
+                <button type="button" on:click={() => setResolveValue(ch, ch.id)} disabled={!!resolvingId}>Cancel</button>
+              </div>
+            </div>
           {:else}
             <a
               href="https://www.youtube.com/channel/{ch.id}"
@@ -187,66 +185,18 @@
     <div class="drop-overlay">Drop URL to add channel</div>
   {/if}
 </div>
+</ModalShell>
 
 <style>
-  .backdrop {
-    position: fixed;
-    inset: 0;
-    background: var(--overlay);
-    z-index: 250;
-    border: 0;
-  }
-  .panel {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 90%;
-    max-width: 560px;
-    max-height: 80vh;
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    z-index: 260;
+  .manager {
+    position: relative;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    overflow-x: hidden;
-    box-shadow: var(--shadow);
   }
-  .panel.drag-over {
+  .manager.drag-over {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.45), var(--shadow);
   }
-  .panel-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--border);
-  }
-  .panel-header h2 {
-    font-size: 1.1rem;
-    color: var(--heading);
-    margin: 0;
-  }
-  .channel-count {
-    color: var(--text-muted);
-    font-size: 0.8rem;
-  }
-  .close-btn {
-    margin-left: auto;
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    font-size: 1.6rem;
-    cursor: pointer;
-    padding: 4px 8px;
-    line-height: 1;
-    border-radius: 7px;
-  }
-  .close-btn:hover { color: var(--heading); background: var(--button); }
-
   .add-bar {
     display: flex;
     gap: 8px;
@@ -295,7 +245,11 @@
   }
   .channel-row.unresolved { border-left: 3px solid var(--danger); }
   .unresolved-help { margin: 6px 14px; padding: 9px 11px; color: var(--text-muted); background: var(--button); border-radius: 7px; font-size: .78rem; }
-  .unresolved-label { color: var(--danger); font-size: .68rem; white-space: nowrap; }
+  .resolve-block { flex: 1; min-width: 0; }
+  .resolve-controls { display: flex; gap: 5px; margin-top: 5px; }
+  .resolve-controls input { flex: 1; min-width: 0; background: var(--field); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px; }
+  .resolve-controls button { background: var(--button); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 7px; }
+  .sr-only { position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0); }
   .channel-link {
     color: var(--text);
     text-decoration: none;
@@ -351,14 +305,9 @@
     border-radius: 8px;
   }
   @media (max-width: 640px) {
-    .panel {
-      width: 95%;
-      max-height: 85vh;
-    }
     .channel-id { display: none; }
     .add-bar { padding: 10px 14px; }
     .add-bar input { font-size: 0.8rem; }
     .channel-row { padding: 8px 14px; }
-    .panel-header { padding: 12px 14px; }
   }
 </style>

@@ -1,6 +1,6 @@
 export const UNRESOLVED_CHANNEL_LABEL = "Needs resolution";
 export const UNRESOLVED_CHANNEL_HELP =
-  "Skipped during refresh. Remove it and add a supported channel, handle, or video URL to replace it.";
+  "Skipped during refresh. Paste a canonical channel ID, handle URL, or video URL below to resolve it in place.";
 
 export function isUnresolvedChannel(channel) {
   return channel?.unresolved === true;

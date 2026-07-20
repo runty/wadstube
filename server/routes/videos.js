@@ -5,6 +5,12 @@ const DEFAULT_LIMIT = 200;
 module.exports = function (appState) {
   const router = express.Router();
   const { getChannelsForFolder, resolveFolderRouteId } = require("../lib/data");
+  const { rateLimit } = require("../lib/security");
+  const returnActionLimit = rateLimit({
+    windowMs: 60_000,
+    max: 30,
+    name: "return acknowledgement",
+  });
 
   function folderId(identifier, res) {
     const resolved = resolveFolderRouteId(appState.data, identifier);
@@ -28,7 +34,7 @@ module.exports = function (appState) {
     const beforeId = req.query.before_id || undefined;
     const beforeFavorite = req.query.before_favorite === "1" ? 1 : 0;
     const beforeReturning = req.query.before_returning === "1" ? 1 : 0;
-    const view = ["all", "unread", "starred", "hidden"].includes(req.query.view)
+    const view = ["all", "unread", "starred", "hidden", "returns"].includes(req.query.view)
       ? req.query.view
       : "all";
     const favorites = req.query.favorites === "1";
@@ -85,6 +91,71 @@ module.exports = function (appState) {
 
   router.get("/counts", (_req, res) => {
     res.json({ unreadByChannel: appState.db.getUnreadCounts() });
+  });
+
+  router.get("/returns", (req, res) => {
+    let options;
+    try {
+      let channelIds;
+      if (req.query.folder && req.query.folder !== "__all__") {
+        channelIds = getChannelsForFolder(appState.data, folderId(req.query.folder, res));
+        if (!channelIds.length) return res.json({ count: 0, videoIds: [] });
+      }
+      const q = typeof req.query.q === "string"
+        ? req.query.q.slice(0, Q_MAX_LEN)
+        : undefined;
+      const sort = ["newest", "oldest", "favorite", "returning"].includes(req.query.sort)
+        ? req.query.sort
+        : "newest";
+      let limit = 500;
+      if (req.query.limit !== undefined) {
+        limit = Number(req.query.limit);
+        if (!Number.isInteger(limit) || limit < 1) {
+          return res.status(400).json({ error: "limit must be a positive integer" });
+        }
+        limit = Math.min(limit, 5000);
+      }
+      options = {
+        channelIds,
+        channelId: req.query.channel || undefined,
+        q,
+        favorites: req.query.favorites === "1",
+        sort,
+        limit,
+      };
+    } catch (err) {
+      return res.status(/not found/i.test(err.message) ? 404 : 400).json({ error: err.message });
+    }
+    try {
+      const result = appState.db.listUnacknowledgedReturns(options);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post("/returns/acknowledge", returnActionLimit, (req, res) => {
+    let videoIds;
+    try {
+      videoIds = req.body?.videoIds;
+      if (!Array.isArray(videoIds) || videoIds.length < 1 || videoIds.length > 5000) {
+        return res.status(400).json({ error: "videoIds must contain 1 to 5000 IDs" });
+      }
+      if (videoIds.some((id) => typeof id !== "string" || !id.trim() || id.length > 128)) {
+        return res.status(400).json({ error: "videoIds must contain valid strings" });
+      }
+      if (new Set(videoIds).size !== videoIds.length) {
+        return res.status(400).json({ error: "videoIds must be unique" });
+      }
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    try {
+      const acknowledged = appState.db.acknowledgeHighlights(videoIds);
+      res.json({ ok: true, requested: videoIds.length, acknowledged });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   router.patch("/:videoId/state", (req, res) => {

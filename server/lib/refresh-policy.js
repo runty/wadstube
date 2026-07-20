@@ -1,5 +1,11 @@
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
+// These limits are intentionally far above useful refresh settings while
+// keeping every interval and upload-age calculation comfortably inside the
+// JavaScript Date range.
+const MAX_REFRESH_INTERVAL_HOURS = 24 * 365;
+const MAX_UPLOAD_AGE_DAYS = 365 * 100;
+const MAX_FAILURE_RETRY_MINUTES = 60 * 24 * 30;
 
 const DEFAULT_POLICY = Object.freeze({
   noHistoryIntervalHours: 24,
@@ -21,11 +27,12 @@ const DEFAULT_POLICY = Object.freeze({
   ]),
 });
 
-function finitePositive(value, name, { allowZero = false } = {}) {
+function finitePositive(value, name, { allowZero = false, max } = {}) {
   const number = Number(value);
   if (!Number.isFinite(number) || (allowZero ? number < 0 : number <= 0)) {
     throw new Error(`${name} must be ${allowZero ? "a non-negative" : "a positive"} number`);
   }
+  if (number > max) throw new Error(`${name} must be at most ${max}`);
   return number;
 }
 
@@ -36,17 +43,21 @@ function validatePolicy(input = DEFAULT_POLICY) {
   const noHistoryIntervalHours = finitePositive(
     input.noHistoryIntervalHours ?? DEFAULT_POLICY.noHistoryIntervalHours,
     "noHistoryIntervalHours",
+    { max: MAX_REFRESH_INTERVAL_HOURS },
   );
   const newUploadCooldownHours = finitePositive(
     input.newUploadCooldownHours ?? DEFAULT_POLICY.newUploadCooldownHours,
     "newUploadCooldownHours",
+    { max: MAX_REFRESH_INTERVAL_HOURS },
   );
   const rawRetries = input.failureRetryMinutes ?? DEFAULT_POLICY.failureRetryMinutes;
   if (!Array.isArray(rawRetries) || !rawRetries.length || rawRetries.length > 20) {
     throw new Error("failureRetryMinutes must be a non-empty array with at most 20 entries");
   }
   const failureRetryMinutes = rawRetries.map((value, index) =>
-    finitePositive(value, `failureRetryMinutes[${index}]`));
+    finitePositive(value, `failureRetryMinutes[${index}]`, {
+      max: MAX_FAILURE_RETRY_MINUTES,
+    }));
   const rawRules = input.rules ?? DEFAULT_POLICY.rules;
   if (!Array.isArray(rawRules)) throw new Error("Smart refresh policy rules must be an array");
   const ids = new Set();
@@ -63,8 +74,12 @@ function validatePolicy(input = DEFAULT_POLICY) {
     return Object.freeze({
       id,
       label: String(rule.label || id).trim().slice(0, 100),
-      minUploadAgeDays: finitePositive(rule.minUploadAgeDays, `${id}.minUploadAgeDays`, { allowZero: true }),
-      minRefreshIntervalHours: finitePositive(rule.minRefreshIntervalHours, `${id}.minRefreshIntervalHours`),
+      minUploadAgeDays: finitePositive(rule.minUploadAgeDays, `${id}.minUploadAgeDays`, {
+        allowZero: true, max: MAX_UPLOAD_AGE_DAYS,
+      }),
+      minRefreshIntervalHours: finitePositive(rule.minRefreshIntervalHours, `${id}.minRefreshIntervalHours`, {
+        max: MAX_REFRESH_INTERVAL_HOURS,
+      }),
     });
   });
   return Object.freeze({
@@ -172,6 +187,9 @@ function filterDueChannels(rows, options = {}) {
 module.exports = {
   HOUR_MS,
   DAY_MS,
+  MAX_REFRESH_INTERVAL_HOURS,
+  MAX_UPLOAD_AGE_DAYS,
+  MAX_FAILURE_RETRY_MINUTES,
   DEFAULT_POLICY,
   validatePolicy,
   loadPolicy,

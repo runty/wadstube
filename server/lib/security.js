@@ -59,7 +59,7 @@ function corsOriginPolicy(allowedOrigins = [], publicOrigin = null) {
     if (req.method === "OPTIONS") {
       res.setHeader(
         "Access-Control-Allow-Methods",
-        "GET, HEAD, POST, PATCH, DELETE, OPTIONS",
+        "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
       );
       res.setHeader(
         "Access-Control-Allow-Headers",
@@ -103,9 +103,17 @@ function rateLimit({ windowMs, max, name }) {
   };
 }
 
+function postOnly(middleware) {
+  return function postOnlyMiddleware(req, res, next) {
+    if (req.method !== "POST") return next();
+    return middleware(req, res, next);
+  };
+}
+
 module.exports = {
   securityHeaders,
   corsOriginPolicy,
   rateLimit,
+  postOnly,
   normalizeOrigin,
 };

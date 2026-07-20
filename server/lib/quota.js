@@ -15,6 +15,15 @@ function addCalendarDay(day) {
   return new Date(Date.UTC(year, month - 1, date + 1)).toISOString().slice(0, 10);
 }
 
+function shiftQuotaDay(day, offset) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isInteger(offset)) {
+    throw new Error("Invalid quota day or calendar offset");
+  }
+  const [year, month, date] = day.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, date + offset));
+  return shifted.toISOString().slice(0, 10);
+}
+
 function resetAtForDay(day) {
   const next = addCalendarDay(day);
   const [year, month, date] = next.split("-").map(Number);
@@ -128,6 +137,7 @@ module.exports = {
   QUOTA_TZ,
   DEFAULT_LIMITS,
   quotaDay,
+  shiftQuotaDay,
   resetAtForDay,
   parseLimits,
   createRunMetrics,

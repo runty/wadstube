@@ -1,8 +1,8 @@
 <script>
   import { onMount } from "svelte";
-  import { activeFolder, refreshFolder, refreshing, error, sidebarOpen, searchQuery, toast, showHealth, quotaStatus, loadQuotaStatus, resetAfterSubscriptionImport } from "../stores/feed.js";
+  import { refreshing, error, sidebarOpen, searchQuery, toast, showHealth, showOperations, showRefreshPreview, quotaStatus, quotaStatusStale, loadQuotaStatus, resetAfterSubscriptionImport } from "../stores/feed.js";
+  import { modalFocusFallback } from "../stores/modal.js";
   import { setThemeMode, themeMode } from "../stores/theme.js";
-  import { rssFallbackSuffix } from "./refresh-report.js";
 
   let fileInput;
   let showGearMenu = false;
@@ -18,28 +18,11 @@
     sidebarOpen.update((v) => !v);
   }
 
-  async function handleRefresh() {
-    try {
-      const result = await refreshFolder($activeFolder);
-      const n = result?.new_videos ?? 0;
-      const errs = result?.errors ?? 0;
-      const msg = n === 0
-        ? "No new videos"
-        : `Added ${n} new video${n === 1 ? "" : "s"}`;
-      const suffix = errs > 0 ? ` (${errs} channel${errs === 1 ? "" : "s"} errored)` : "";
-      const skipped = result?.skipped || 0;
-      const skippedSuffix = skipped > 0
-        ? ` · ${skipped} skipped`
-        : "";
-      const report = ` · ${result?.checked ?? 0} channels checked · ${result?.api_units || 0} API units this refresh · ${result?.daily_used ?? "?"} API units used today`;
-      toast.set({
-        message: msg + suffix + skippedSuffix + rssFallbackSuffix(result) + report,
-        type: n > 0 ? "success" : "info",
-        durationMs: 10_000,
-      });
-    } catch {
-      // error is already set in the store
-    }
+  function handleRefresh() { showRefreshPreview.set(true); }
+  function openPersistentModal(store, closeMenu = false) {
+    modalFocusFallback.set(brandButton);
+    if (closeMenu) showGearMenu = false;
+    store.set(true);
   }
 
   function closeGearMenu() { showGearMenu = false; }
@@ -126,7 +109,8 @@
     </button>
     {#if showGearMenu}
       <div id="settings-popover" class="gear-menu title-menu" aria-label="Settings">
-        <button type="button" on:keydown={handleSettingsKeydown} on:click={() => { showGearMenu = false; showHealth.set(true); }}>Channel health</button>
+        <button type="button" on:keydown={handleSettingsKeydown} on:click={() => openPersistentModal(showHealth, true)}>Channel health</button>
+        <button type="button" on:keydown={handleSettingsKeydown} on:click={() => openPersistentModal(showOperations, true)}>Operations & refresh rules</button>
         <button type="button" on:keydown={handleSettingsKeydown} on:click={handleBackup}>&#8615; Export subscriptions</button>
         <button type="button" on:keydown={handleSettingsKeydown} on:click={handleFullBackup}>&#8615; Full backup</button>
         <button type="button" on:keydown={handleSettingsKeydown} on:click={handleRestoreClick}>&#8613; Import subscriptions</button>
@@ -148,8 +132,10 @@
   </div>
   <input type="file" accept=".json" bind:this={fileInput} on:change={handleRestoreFile} hidden />
   <div class="header-actions">
-    {#if $quotaStatus?.buckets?.general}
-      <button class="quota-meter" type="button" on:click={() => showHealth.set(true)}
+    {#if $quotaStatusStale}
+      <button class="quota-meter stale" type="button" on:click={() => openPersistentModal(showHealth)} title="YouTube API quota status unavailable">API unavailable</button>
+    {:else if $quotaStatus?.buckets?.general}
+      <button class="quota-meter" type="button" on:click={() => openPersistentModal(showHealth)}
         title={`Resets ${new Date($quotaStatus.resetAt).toLocaleString()}`}>
         API {$quotaStatus.buckets.general.remaining.toLocaleString()} left
       </button>
@@ -186,7 +172,8 @@
         <span aria-hidden="true">☾</span>
       </button>
     </div>
-    <button class="refresh-btn" type="button" on:click={handleRefresh} disabled={$refreshing}>
+    <button class="refresh-btn" type="button" on:click={handleRefresh} disabled={$refreshing}
+      aria-haspopup="dialog" aria-controls="refresh-preview">
       {#if $refreshing}
         <span class="spinner" aria-hidden="true"></span>
         <span class="refresh-label">Refreshing...</span>
@@ -329,6 +316,7 @@
   }
   .quota-meter { background: var(--button); color: var(--text-muted); border: 1px solid var(--border); border-radius: 7px; min-height: 38px; padding: 0 9px; font: inherit; font-size: .74rem; cursor: pointer; }
   .quota-meter:hover { color: var(--heading); border-color: var(--border-strong); }
+  .quota-meter.stale { color: var(--danger); border-color: var(--danger); }
   .wads-theme-switch {
     display: inline-grid;
     grid-template-columns: repeat(3, 30px);

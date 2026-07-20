@@ -7,7 +7,9 @@
   import Toast from "./lib/Toast.svelte";
   import RefreshProgress from "./lib/RefreshProgress.svelte";
   import ChannelHealth from "./lib/ChannelHealth.svelte";
-  import { loadFolders, sidebarOpen, showChannelsFor, showHealth, error, initializeUrlState, startUrlSync } from "./stores/feed.js";
+  import RefreshPreview from "./lib/RefreshPreview.svelte";
+  import OperationsPanel from "./lib/OperationsPanel.svelte";
+  import { loadFolders, sidebarOpen, showChannelsFor, showHealth, showOperations, showRefreshPreview, error, initializeUrlState, startUrlSync } from "./stores/feed.js";
 
   if (typeof window !== "undefined") initializeUrlState();
 
@@ -33,6 +35,12 @@
   {/if}
   {#if $showHealth}
     <ChannelHealth />
+  {/if}
+  {#if $showRefreshPreview}
+    <RefreshPreview />
+  {/if}
+  {#if $showOperations}
+    <OperationsPanel />
   {/if}
   <Toast />
   <RefreshProgress />

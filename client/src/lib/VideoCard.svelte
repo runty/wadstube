@@ -1,5 +1,5 @@
 <script>
-  import { setVideoState, toast, error } from "../stores/feed.js";
+  import { setVideoState, acknowledgeReturnVideos, toast, error } from "../stores/feed.js";
   export let video;
 
   async function update(changes, message) {
@@ -28,6 +28,16 @@
       return_after_1_year: "Returned after 1 year",
     }[reason] || `Returned ${reason.replaceAll("_", " ")}`;
   }
+  async function acknowledgeReturn() {
+    try {
+      const result = await acknowledgeReturnVideos([video.video_id]);
+      const message = result.acknowledged ? "Return acknowledged" : "Return already acknowledged";
+      toast.set({
+        message: message + (result.reloadFailures ? ` · ${result.reloadFailures} view reload${result.reloadFailures === 1 ? "" : "s"} failed` : ""),
+        type: result.reloadFailures ? "warning" : "success",
+      });
+    } catch (err) { error.set(err.message); }
+  }
 </script>
 
 <article class="card" class:watched={video.watched} class:returning={!!video.highlight_reason}>
@@ -51,6 +61,7 @@
         aria-pressed={video.starred}>{video.starred ? "★ Starred" : "☆ Star"}</button>
       <button on:click={() => update({ hidden: !video.hidden }, video.hidden ? "Restored video" : "Hidden")}>{video.hidden ? "Restore" : "Hide"}</button>
       <button on:click={copyLink}>Copy link</button>
+      {#if video.highlight_reason}<button class="ack" on:click={acknowledgeReturn}>Acknowledge return</button>{/if}
     </div>
   </div>
 </article>
@@ -74,6 +85,7 @@
   .actions { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
   .actions button { background: var(--button); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 7px; font-size: .72rem; cursor: pointer; }
   .actions button.active { color: var(--accent); border-color: var(--accent); }
+  .actions button.ack { color: var(--accent); border-color: var(--accent); }
   :global(.grid.compact) .card-body { padding: 8px; }
   :global(.grid.compact) .card-desc { display: none; }
   :global(.grid.compact) .actions button { padding: 3px 5px; font-size: .66rem; }
