@@ -6,6 +6,13 @@
 
 A self-hosted YouTube subscription manager and video feed viewer. Organizes your YouTube subscriptions into folders, pulls new videos via channel RSS feeds (or the YouTube Data API — your choice), stores them in SQLite, and presents them in a clean, themed web interface. Runs in Docker.
 
+## What's new in v2.1
+
+- API refreshes automatically use RSS when the daily quota cannot cover the selected channels.
+- The first structured quota or rate-limit response during a refresh trips a shared breaker, retries affected channels through RSS, and routes the rest of that refresh through RSS.
+- RSS fallback stays within a dedicated five-channel concurrency limit and does not hide authentication, permission, not-found, or availability errors.
+- Refresh reports distinguish API units, RSS network attempts, and the number of channels redirected to RSS.
+
 ## Why
 
 YouTube's native subscription feed is a single unsorted stream. PocketTube (browser extension) adds folder organization but only works in the browser. WadsTube gives you a standalone app with full control: folder management, user-initiated per-folder refresh, search, drag-and-drop channel adding, and no shorts.
