@@ -1,87 +1,110 @@
-<p align="center">
-  <img src="client/public/wads.png" alt="WadsTube logo" width="512">
-</p>
-
 # WadsTube
 
-A self-hosted YouTube subscription manager and video feed viewer. Organizes your YouTube subscriptions into folders, pulls new videos via channel RSS feeds (or the YouTube Data API — your choice), stores them in SQLite, and presents them in a clean, themed web interface. Runs in Docker.
+![WadsTube logo](client/public/wads.png)
+
+A self-hosted YouTube subscription manager and video feed viewer. Organizes your
+YouTube subscriptions into folders, pulls new videos via channel RSS feeds (or
+the YouTube Data API — your choice), stores them in SQLite, and presents them in
+a clean, themed web interface. Runs in Docker.
 
 ## What's new in v2.1
 
-- API refreshes automatically use RSS when the daily quota cannot cover the selected channels.
-- The first structured quota or rate-limit response during a refresh trips a shared breaker, retries affected channels through RSS, and routes the rest of that refresh through RSS.
-- RSS fallback stays within a dedicated five-channel concurrency limit and does not hide authentication, permission, not-found, or availability errors.
-- Refresh reports distinguish API units, RSS network attempts, and the number of channels redirected to RSS.
+- API refreshes automatically use RSS when the daily quota cannot cover the
+  selected channels.
+- The first structured quota or rate-limit response during a refresh trips a
+  shared breaker, retries affected channels through RSS, and routes the rest of
+  that refresh through RSS.
+- RSS fallback stays within a dedicated five-channel concurrency limit and does
+  not hide authentication, permission, not-found, or availability errors.
+- Refresh reports distinguish API units, RSS network attempts, and the number of
+  channels redirected to RSS.
 
 ## Why
 
-YouTube's native subscription feed is a single unsorted stream. PocketTube (browser extension) adds folder organization but only works in the browser. WadsTube gives you a standalone app with full control: folder management, user-initiated per-folder refresh, search, drag-and-drop channel adding, and no shorts.
+YouTube's native subscription feed is a single unsorted stream. PocketTube
+(browser extension) adds folder organization but only works in the browser.
+WadsTube gives you a standalone app with full control: folder management,
+user-initiated per-folder refresh, search, drag-and-drop channel adding, and no
+shorts.
 
 ## Features
 
 - **Folder-organized feed** — sidebar with expandable folder/subfolder hierarchy
-- **Expandable channels in sidebar** — click the chevron next to a folder to see channels inline; click a channel to filter videos to just that channel
-- **Channel management** — manage channels from each folder, rename/remove them from the sidebar, and mark favorite channels with a star. A rename sticks across later refreshes.
-- **Legacy subscription quarantine** — old URL-style subscription IDs remain in their original folders as visible “Needs resolution” entries; they can be renamed, moved, or removed but never enter refresh, quota, unread, or database-health paths.
-- **Reader state** — mark videos watched/unread, star them, or hide/restore them. State is stored in SQLite and shared across devices.
-- **Reader views** — all, unread, starred, and hidden views; favorite-channel filtering; newest/oldest/favorites-first/returns-first sorting; grid, compact, and list layouts.
-- **Persistent navigation** — folder, channel, search, reader view, favorites, sort, and density are encoded in the URL for reloads and browser back/forward.
-- **Refresh health** — inspect each channel's last attempt, latest error, and stale status; retry it immediately or delete it from every folder.
-- **Manual-only refresh** — WadsTube makes no automatic channel requests; every refresh starts from a user click
-- **RSS or API refresh** — RSS is free; user-initiated refreshes can instead use the YouTube Data API when RSS is rate-limited
-- **Smart refresh selection** — a user-initiated folder/all refresh waits 2 hours after a refresh that found a new upload, and skips inactive channels until their configured minimum has elapsed (6 h after 90 days, 24 h after 365 days by default)
-- **Return highlights** — a new long-form upload from a channel returning after at least 3 months is highlighted with a bold red border, without marking an initial backfill
-- **Quota ledger** — persistent Pacific-day API usage, remaining general/search budgets, per-endpoint counts, and per-refresh API/RSS/Shorts reports
-- **Live progress UI** — a per-channel overlay shows each channel as it's fetched, with a `done/total` counter, running "new videos" tally, and error count
-- **No YouTube Shorts** — shorts are automatically detected (via a free HEAD request) and filtered out; transient classification failures remain `unknown` and are retried on later refreshes
+- **Expandable channels in sidebar** — click the chevron next to a folder to see
+  channels inline; click a channel to filter videos to just that channel
+- **Channel management** — manage channels from each folder, rename/remove them
+  from the sidebar, and mark favorite channels with a star. A rename sticks
+  across later refreshes.
+- **Legacy subscription quarantine** — old URL-style subscription IDs remain in
+  their original folders as visible “Needs resolution” entries; they can be
+  renamed, moved, or removed but never enter refresh, quota, unread, or
+  database-health paths.
+- **Reader state** — mark videos watched/unread, star them, or hide/restore
+  them. State is stored in SQLite and shared across devices.
+- **Reader views** — all, unread, starred, and hidden views; favorite-channel
+  filtering; newest/oldest/favorites-first/returns-first sorting; grid, compact,
+  and list layouts.
+- **Persistent navigation** — folder, channel, search, reader view, favorites,
+  sort, and density are encoded in the URL for reloads and browser back/forward.
+- **Refresh health** — inspect each channel's last attempt, latest error, and
+  stale status; retry it immediately or delete it from every folder.
+- **Manual-only refresh** — WadsTube makes no automatic channel requests; every
+  refresh starts from a user click
+- **RSS or API refresh** — RSS is free; user-initiated refreshes can instead use
+  the YouTube Data API when RSS is rate-limited
+- **Smart refresh selection** — a user-initiated folder/all refresh waits 2
+  hours after a refresh that found a new upload, and skips inactive channels
+  until their configured minimum has elapsed (6 h after 90 days, 24 h after 365
+  days by default)
+- **Return highlights** — a new long-form upload from a channel returning after
+  at least 3 months is highlighted with a bold red border, without marking an
+  initial backfill
+- **Quota ledger** — persistent Pacific-day API usage, remaining general/search
+  budgets, per-endpoint counts, and per-refresh API/RSS/Shorts reports
+- **Live progress UI** — a per-channel overlay shows each channel as it's
+  fetched, with a `done/total` counter, running "new videos" tally, and error
+  count
+- **No YouTube Shorts** — shorts are automatically detected (via a free HEAD
+  request) and filtered out; transient classification failures remain `unknown`
+  and are retried on later refreshes
 - **Search** — filter videos by title, channel name, or description
-- **Drag-and-drop** — drag any YouTube URL (video, channel, @handle, shorts, live) onto a folder to add that channel
+- **Drag-and-drop** — drag any YouTube URL (video, channel, @handle, shorts,
+  live) onto a folder to add that channel
 - **Paste to add** — paste URLs in the channel list panel (works on mobile)
-- **URL resolution** — video URLs are auto-resolved to the channel via YouTube API (1 unit)
-- **Exports and backups** — subscription JSON export/import is separate from a downloadable full export containing `tube.json`, an integrity-checked SQLite snapshot, checksums, and a manifest; nightly backups retain consistent on-disk snapshots
-- **Accessible video actions** — native YouTube links plus explicit copy, watched, star, and hide controls
-- **Mobile-friendly** — long-press for context menus, iOS home screen icon, responsive layout
+- **URL resolution** — video URLs are auto-resolved to the channel via YouTube
+  API (1 unit)
+- **Exports and backups** — subscription JSON export/import is separate from a
+  downloadable full export containing `tube.json`, an integrity-checked SQLite
+  snapshot, checksums, and a manifest; nightly backups retain consistent on-disk
+  snapshots
+- **Accessible video actions** — native YouTube links plus explicit copy,
+  watched, star, and hide controls
+- **Mobile-friendly** — long-press for context menus, iOS home screen icon,
+  responsive layout
 - **System light/dark mode** — auto-switches with OS theme
 - **Local timezone** — video publish times displayed in your browser's timezone
-- **PocketTube migration** — auto-imports from PocketTube JSON export on first run
+- **PocketTube migration** — auto-imports from PocketTube JSON export on first
+  run
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────┐
-│                    Docker                        │
-│                                                  │
-│  ┌──────────┐     ┌──────────────────────────┐  │
-│  │  Svelte  │────▶│    Express Server         │  │
-│  │   SPA    │     │                           │  │
-│  │ (static) │◀────│  /api/folders             │  │
-│  └──────────┘     │  /api/videos              │  │
-│                   │  /api/refresh  (NDJSON)   │  │
-│                   │  /api/backup              │  │
-│                   │  /api/restore             │  │
-│                   │  /api/resolve-url         │  │
-│                   └────────────┬──────────────┘  │
-│                                │                 │
-│                   ┌────────────▼──────────────┐  │
-│                   │      /app/data/            │  │
-│                   │   tube.json  (folders)     │  │
-│                   │   wadstube.db (SQLite)     │  │
-│                   │   backups/YYYY-MM-DD/      │  │
-│                   └────────────┬──────────────┘  │
-│                                │                 │
-└────────────────────────────────┬─────────────────┘
-                                 │
-             ┌───────────────────┼──────────────────┐
-             │                                      │
-  ┌──────────▼──────────┐              ┌───────────▼─────────┐
-  │  YouTube RSS feeds  │              │  YouTube Data API   │
-  │  (free, rate-       │              │  (1 quota unit per  │
-  │   limited per IP)   │              │   channel; used for │
-  │                     │              │   URL resolution    │
-  │                     │              │   always, plus      │
-  │                     │              │   refresh when      │
-  │                     │              │   REFRESH_MODE=api) │
-  └─────────────────────┘              └─────────────────────┘
+```mermaid
+flowchart LR
+    subgraph docker["Docker"]
+        direction LR
+        spa["Svelte SPA<br/>(static)"]
+        server["Express Server<br/><br/>/api/folders<br/>/api/videos<br/>/api/refresh (NDJSON)<br/>/api/backup<br/>/api/restore<br/>/api/resolve-url"]
+        data["/app/data/<br/><br/>tube.json (folders)<br/>wadstube.db (SQLite)<br/>backups/YYYY-MM-DD/"]
+
+        spa <-->|"HTTP / NDJSON"| server
+        server <-->|"read / write"| data
+    end
+
+    rss["YouTube RSS feeds<br/>(free, rate-limited per IP)"]
+    api["YouTube Data API<br/>(1 quota unit per channel;<br/>always used for URL resolution,<br/>plus refresh when REFRESH_MODE=api)"]
+
+    server -->|"channel refresh"| rss
+    server -->|"URL resolution / API refresh"| api
 ```
 
 ### Stack
@@ -89,21 +112,38 @@ YouTube's native subscription feed is a single unsorted stream. PocketTube (brow
 - **Backend:** Node.js + Express
 - **Frontend:** Svelte (built with Vite)
 - **Deployment:** Docker (multi-stage build, Alpine Linux)
-- **Data:** `tube.json` (folders/channels, atomic writes) + `wadstube.db` (SQLite, WAL mode) on a mounted volume
+- **Data:** `tube.json` (folders/channels, atomic writes) + `wadstube.db`
+  (SQLite, WAL mode) on a mounted volume
 
 ### Data Flow
 
-1. **Page load** — frontend fetches `/api/folders` (folder tree) and shows the sidebar. No videos are loaded until you click a folder.
-2. **Select folder** — frontend fetches `/api/videos?folder=X`, which reads from `wadstube.db` (no network call).
-3. **Refresh** — frontend POSTs to `/api/refresh/:folder`; the server streams NDJSON events back (init, start/done per channel, final summary). Each channel is fetched via RSS or the YouTube Data API depending on `REFRESH_MODE_MANUAL`. If API quota cannot cover the selected due set, the run uses RSS; authoritative quota/rate-limit errors during an API run also trip an RSS fallback breaker. New videos are inserted, existing ones have title/description/thumbnail refreshed, and each channel keeps the last `MAX_VIDEOS` visible entries plus a bounded Shorts cache.
-4. **Smart selection** — the manual folder/all request checks stored refresh/upload timestamps and whether the previous successful refresh discovered a new upload. It applies the configured 2-hour post-upload, 6-hour inactive, or 24-hour long-inactive minimum. A direct per-channel retry is an explicit override.
-5. **Add channel** — frontend POSTs a URL to `/api/folders/:id/channels`. Server resolves the URL to a channel ID (via YouTube Data API if needed), adds it to `tube.json`. Name-based identifiers remain accepted for older clients.
+1. **Page load** — frontend fetches `/api/folders` (folder tree) and shows the
+   sidebar. No videos are loaded until you click a folder.
+2. **Select folder** — frontend fetches `/api/videos?folder=X`, which reads from
+   `wadstube.db` (no network call).
+3. **Refresh** — frontend POSTs to `/api/refresh/:folder`; the server streams
+   NDJSON events back (init, start/done per channel, final summary). Each
+   channel is fetched via RSS or the YouTube Data API depending on
+   `REFRESH_MODE_MANUAL`. If API quota cannot cover the selected due set, the
+   run uses RSS; authoritative quota/rate-limit errors during an API run also
+   trip an RSS fallback breaker. New videos are inserted, existing ones have
+   title/description/thumbnail refreshed, and each channel keeps the last
+   `MAX_VIDEOS` visible entries plus a bounded Shorts cache.
+4. **Smart selection** — the manual folder/all request checks stored
+   refresh/upload timestamps and whether the previous successful refresh
+   discovered a new upload. It applies the configured 2-hour post-upload, 6-hour
+   inactive, or 24-hour long-inactive minimum. A direct per-channel retry is an
+   explicit override.
+5. **Add channel** — frontend POSTs a URL to `/api/folders/:id/channels`. Server
+   resolves the URL to a channel ID (via YouTube Data API if needed), adds it to
+   `tube.json`. Name-based identifiers remain accepted for older clients.
 
 ### Data Storage
 
 Two files in `data/`:
 
 **`tube.json`** — your subscription data (folders + channels, atomic write):
+
 ```json
 {
   "version": 1,
@@ -124,56 +164,133 @@ Two files in `data/`:
 }
 ```
 
-`userRenamed: true` is set automatically when you rename a channel from the sidebar so later refreshes leave your chosen name alone. Folder IDs are stable identifiers and do not change on rename; older slug IDs remain valid. The tree is normalized on every load and on restore — missing `channels`/`children` arrays are coerced to `[]`, folder nesting is capped at five levels (depth 0–4), and prototype-pollution keys are stripped. Resolved channel IDs must match `^UC[A-Za-z0-9_-]{22}$`; a nonempty legacy reference that does not match is preserved with `unresolved: true` and excluded from all network and SQLite channel paths. Empty or structurally malformed channel entries remain validation losses. Startup repairs are persisted after saving the original as `tube.json.pre-normalize.*`; restores are rejected with detailed validation errors if normalization would drop folders or channels.
+`userRenamed: true` is set automatically when you rename a channel from the
+sidebar so later refreshes leave your chosen name alone. Folder IDs are stable
+identifiers and do not change on rename; older slug IDs remain valid. The tree
+is normalized on every load and on restore — missing `channels`/`children`
+arrays are coerced to `[]`, folder nesting is capped at five levels (depth 0–4),
+and prototype-pollution keys are stripped. Resolved channel IDs must match
+`^UC[A-Za-z0-9_-]{22}$`; a nonempty legacy reference that does not match is
+preserved with `unresolved: true` and excluded from all network and SQLite
+channel paths. Empty or structurally malformed channel entries remain validation
+losses. Startup repairs are persisted after saving the original as
+`tube.json.pre-normalize.*`; restores are rejected with detailed validation
+errors if normalization would drop folders or channels.
 
 **`wadstube.db`** — SQLite, WAL mode. Core tables include:
-- `channels(...)` — last-known title, RSS conditional-request hints, favorite flag, separate attempt/success timestamps, newest known upload, and failure state
-- `videos(...)` — cached video metadata, retryable Shorts classification, and durable pending/final return-highlight reason
-- `video_state(video_id PK, watched_at, starred_at, hidden_at, updated_at)` — durable reader state
-- `api_usage(...)` and `refresh_runs(...)` — Pacific-day quota ledger and a bounded history of persistent run reports, including requested/effective mode and RSS-fallback count/reason
-- `videos_fts` — FTS5 search index, transactionally rebuilt on startup; search falls back to `LIKE` if FTS5 is unavailable
 
-If `cache.json` exists on first boot (from a pre-RSS install), it's imported into the DB once and renamed `cache.json.migrated`.
+- `channels(...)` — last-known title, RSS conditional-request hints, favorite
+  flag, separate attempt/success timestamps, newest known upload, and failure
+  state
+- `videos(...)` — cached video metadata, retryable Shorts classification, and
+  durable pending/final return-highlight reason
+- `video_state(video_id PK, watched_at, starred_at, hidden_at, updated_at)` —
+  durable reader state
+- `api_usage(...)` and `refresh_runs(...)` — Pacific-day quota ledger and a
+  bounded history of persistent run reports, including requested/effective mode
+  and RSS-fallback count/reason
+- `videos_fts` — FTS5 search index, transactionally rebuilt on startup; search
+  falls back to `LIKE` if FTS5 is unavailable
+
+If `cache.json` exists on first boot (from a pre-RSS install), it's imported
+into the DB once and renamed `cache.json.migrated`.
 
 ## How the Code Works
 
 ### Server
 
 #### `server/index.js` — Entry Point
-Loads `tube.json` (or auto-migrates from PocketTube format), opens the SQLite DB, runs the one-time cache.json migration if needed, and creates the shared `appState` used by every route handler. Mounts API routes, schedules nightly backups, and serves the built Svelte SPA. Channel network requests only run from user-initiated routes.
+
+Loads `tube.json` (or auto-migrates from PocketTube format), opens the SQLite
+DB, runs the one-time cache.json migration if needed, and creates the shared
+`appState` used by every route handler. Mounts API routes, schedules nightly
+backups, and serves the built Svelte SPA. Channel network requests only run from
+user-initiated routes.
 
 #### `server/lib/data.js` — Data Layer
-Manages `tube.json`. Load/save with atomic writes, folder/channel CRUD, recursive channel-id collection, name syncing (propagates channel titles from the DB into `tube.json`).
+
+Manages `tube.json`. Load/save with atomic writes, folder/channel CRUD,
+recursive channel-id collection, name syncing (propagates channel titles from
+the DB into `tube.json`).
 
 #### `server/lib/db.js` — SQLite Wrapper
-`better-sqlite3` in WAL mode. Sequential `user_version` migrations upgrade existing databases without dropping data. The wrapper stores smart-refresh timestamps, reader state, quota usage and refresh runs; uses FTS5 for indexed video search with a safe `LIKE` fallback; and uses `VACUUM INTO` for consistent snapshots.
+
+`better-sqlite3` in WAL mode. Sequential `user_version` migrations upgrade
+existing databases without dropping data. The wrapper stores smart-refresh
+timestamps, reader state, quota usage and refresh runs; uses FTS5 for indexed
+video search with a safe `LIKE` fallback; and uses `VACUUM INTO` for consistent
+snapshots.
 
 #### `server/lib/frontend.js` — Frontend Serving
-Serves `index.html` with `Cache-Control: no-store`, hashed bundles with immutable one-year caching, and a real `404` for missing `/assets/*` paths so an open tab cannot receive SPA HTML for a stale JavaScript bundle after deployment.
+
+Serves `index.html` with `Cache-Control: no-store`, hashed bundles with
+immutable one-year caching, and a real `404` for missing `/assets/*` paths so an
+open tab cannot receive SPA HTML for a stale JavaScript bundle after deployment.
 
 #### `server/lib/rss.js` — Atom Feed Client
-Fetches `https://www.youtube.com/feeds/videos.xml?channel_id=UC...`, parses with `fast-xml-parser`. Sends `If-None-Match` / `If-Modified-Since` when the DB has them (YouTube doesn't currently emit these, but the code is ready if they turn it on). Retries once with 1s backoff and once more with 3s backoff on 404/5xx, which YouTube throws under per-IP rate pressure.
+
+Fetches `https://www.youtube.com/feeds/videos.xml?channel_id=UC...`, parses with
+`fast-xml-parser`. Sends `If-None-Match` / `If-Modified-Since` when the DB has
+them (YouTube doesn't currently emit these, but the code is ready if they turn
+it on). Retries once with 1s backoff and once more with 3s backoff on 404/5xx,
+which YouTube throws under per-IP rate pressure.
 
 #### `server/lib/youtube.js` — YouTube Data API Client
-- `resolveUrl(apiKey, url)` — parses YouTube URLs in every format (video, channel, @handle, shorts, live, youtu.be) and resolves to `{ channelId, channelTitle }`. Canonical channel URLs are free (0 units). Video URLs use `videos.list` (1 unit). `@handle` URLs use exact `channels.list(forHandle=...)` resolution (1 general quota unit, without consuming the separate search-call allowance).
-- `fetchChannelViaApi(apiKey, channelId)` — `playlistItems.list` for the channel's uploads playlist (1 unit, up to 50 items). Returns the same shape as the RSS client so `refresh.js` can dispatch on mode.
-- `checkIsShort(videoId)` — HEAD request to `/shorts/{id}`; returns `short`, `long`, or retryable `unknown`.
+
+- `resolveUrl(apiKey, url)` — parses YouTube URLs in every format (video,
+  channel, @handle, shorts, live, youtu.be) and resolves to
+  `{ channelId, channelTitle }`. Canonical channel URLs are free (0 units).
+  Video URLs use `videos.list` (1 unit). `@handle` URLs use exact
+  `channels.list(forHandle=...)` resolution (1 general quota unit, without
+  consuming the separate search-call allowance).
+- `fetchChannelViaApi(apiKey, channelId)` — `playlistItems.list` for the
+  channel's uploads playlist (1 unit, up to 50 items). Returns the same shape as
+  the RSS client so `refresh.js` can dispatch on mode.
+- `checkIsShort(videoId)` — HEAD request to `/shorts/{id}`; returns `short`,
+  `long`, or retryable `unknown`.
 
 #### `server/lib/refresh.js` — Refresh Orchestrator
-`refreshChannels(db, ids, opts, onEvent)` spins up per-channel workers in a `p-limit` pool (5 concurrent in RSS mode, 20 in API mode). API quota/rate-limit responses are recognized only by their exact structured error code; they trip a run-wide breaker and redirect the failed and not-yet-started channels through a dedicated five-request RSS pool. Authentication, permission, not-found, and availability errors are not masked. Every attempt stores `last_refresh_attempt_at`; only a successful response (`ok` or RSS `304`) advances `last_refreshed_at`, and a feed response advances `latest_upload_at`. Worker failures are isolated and all workers settle before the run finishes or releases its lock. New long-form videos get the strongest matching inactivity-rule ID when the channel had been refreshed before. Unknown Shorts are selected from SQLite and retried with paced backoff even after they fall outside the current RSS window; a pending return badge survives until classification succeeds. Every run persists its API/RSS/Shorts report.
+
+`refreshChannels(db, ids, opts, onEvent)` spins up per-channel workers in a
+`p-limit` pool (5 concurrent in RSS mode, 20 in API mode). API quota/rate-limit
+responses are recognized only by their exact structured error code; they trip a
+run-wide breaker and redirect the failed and not-yet-started channels through a
+dedicated five-request RSS pool. Authentication, permission, not-found, and
+availability errors are not masked. Every attempt stores
+`last_refresh_attempt_at`; only a successful response (`ok` or RSS `304`)
+advances `last_refreshed_at`, and a feed response advances `latest_upload_at`.
+Worker failures are isolated and all workers settle before the run finishes or
+releases its lock. New long-form videos get the strongest matching
+inactivity-rule ID when the channel had been refreshed before. Unknown Shorts
+are selected from SQLite and retried with paced backoff even after they fall
+outside the current RSS window; a pending return badge survives until
+classification succeeds. Every run persists its API/RSS/Shorts report.
 
 #### `server/lib/backup.js` — Nightly Backups
-Owns the global refresh lock while staging `tube.json` and a `VACUUM INTO wadstube.db` snapshot for `data/backups/YYYY-MM-DD/` every night at 1 am local time (container `TZ`). The complete pair is published as one directory swap, so a failed snapshot or publication restores the prior pair; retention ignores incomplete staging/directories. Grandfather-Father-Son retention keeps 4 daily + 4 weekly + 4 monthly snapshots and catches up on boot when overdue.
+
+Owns the global refresh lock while staging `tube.json` and a
+`VACUUM INTO wadstube.db` snapshot for `data/backups/YYYY-MM-DD/` every night at
+1 am local time (container `TZ`). The complete pair is published as one
+directory swap, so a failed snapshot or publication restores the prior pair;
+retention ignores incomplete staging/directories. Grandfather-Father-Son
+retention keeps 4 daily + 4 weekly + 4 monthly snapshots and catches up on boot
+when overdue.
 
 #### `server/lib/migrate.js` — PocketTube Migration
-One-time migration from PocketTube's JSON export to the native `tube.json` format.
+
+One-time migration from PocketTube's JSON export to the native `tube.json`
+format.
 
 #### `server/lib/migrate-cache.js` — cache.json → SQLite
-One-time import of a legacy `cache.json` into SQLite on first boot with the new codebase. Renames the file afterwards so it doesn't re-run.
+
+One-time import of a legacy `cache.json` into SQLite on first boot with the new
+codebase. Renames the file afterwards so it doesn't re-run.
 
 #### `server/routes/folders.js` — Folder & Channel API
+
 - `GET /api/folders` — folder tree summary (names + counts)
-- `POST /api/folders` — create folder (validates name: no `../`, `/`, `\`, null bytes, max 100 chars)
+- `POST /api/folders` — create folder (validates name: no `../`, `/`, `\`, null
+  bytes, max 100 chars)
 - `PATCH /api/folders/:id` — rename
 - `DELETE /api/folders/:id` — delete
 - `GET /api/folders/:id/channels` — favorites first, then alphabetical
@@ -182,25 +299,34 @@ One-time import of a legacy `cache.json` into SQLite on first boot with the new 
 - `PATCH /api/folders/:id/channels/:channelId` — rename
 - `POST /api/folders/:id/channels/:channelId/move` — move to another folder
 
-Routes resolve immutable IDs first. An exact, unique legacy folder name remains supported for older clients and returns `Deprecation: true` plus an HTTP `Warning` header; ambiguous names are rejected.
+Routes resolve immutable IDs first. An exact, unique legacy folder name remains
+supported for older clients and returns `Deprecation: true` plus an HTTP
+`Warning` header; ambiguous names are rejected.
 
 #### `server/routes/videos.js` — Video API
-- `GET /api/videos?folder=ID&view=unread&favorites=1&sort=newest` — filtered DB-cached videos
+
+- `GET /api/videos?folder=ID&view=unread&favorites=1&sort=newest` — filtered
+  DB-cached videos
 - `GET /api/videos/counts` — unread counts by channel
 - `PATCH /api/videos/:videoId/state` — update watched, starred, or hidden state
 
 #### `server/routes/channels.js` — Channel Preference & Health API
+
 - `GET /api/channels?status=error|stale` — refresh-health rows
 - `PATCH /api/channels/:channelId` — update the favorite flag
-- `DELETE /api/channels/:channelId` — remove a channel from every folder and purge its cached data
+- `DELETE /api/channels/:channelId` — remove a channel from every folder and
+  purge its cached data
 - `POST /api/channels/:channelId/refresh` — retry one subscribed channel
 
 #### `server/routes/refresh.js` — Refresh API (streaming NDJSON)
+
 - `POST /api/refresh` — refresh every channel referenced by any folder
 - `POST /api/refresh/:folder` — refresh only channels in that folder
 
-Both stream NDJSON events (Content-Type `application/x-ndjson`) with one event per line:
-```
+Both stream NDJSON events (Content-Type `application/x-ndjson`) with one event
+per line:
+
+```json
 {"type":"init","total":42}
 {"type":"start","channelId":"UC...","channelTitle":"Tom Scott"}
 {"type":"done","channelId":"UC...","channelTitle":"Tom Scott","status":"ok","newVideos":2}
@@ -208,46 +334,88 @@ Both stream NDJSON events (Content-Type `application/x-ndjson`) with one event p
 {"type":"summary","refreshed":40,"new_videos":57,"errors":2,"requested_mode":"api","effective_mode":"api+rss","rss_fallbacks":3,"fallback_reason":"quotaExceeded","api_units":20,"rss_requests":3,"total_channels":...,"total_videos":...}
 ```
 
-If another manual refresh, restore, or backup already owns the lock, the route returns 409 immediately so the client can surface the conflict rather than stall.
+If another manual refresh, restore, or backup already owns the lock, the route
+returns 409 immediately so the client can surface the conflict rather than
+stall.
 
 ### Client
 
 #### `client/src/stores/feed.js` — State Management
-Svelte writable stores cover folders/videos, the active folder/channel, reader view, favorites, sort, density, health, refresh progress, errors and toasts. A shared `channelLists` cache keeps favorite/unread metadata consistent across duplicate folder memberships and the channel modal. URL state is synchronized with browser navigation. `refreshFolder()` incrementally reads NDJSON into `refreshProgress` and returns the final summary.
+
+Svelte writable stores cover folders/videos, the active folder/channel, reader
+view, favorites, sort, density, health, refresh progress, errors and toasts. A
+shared `channelLists` cache keeps favorite/unread metadata consistent across
+duplicate folder memberships and the channel modal. URL state is synchronized
+with browser navigation. `refreshFolder()` incrementally reads NDJSON into
+`refreshProgress` and returns the final summary.
 
 #### `client/src/App.svelte` — Root Component
-Mounts Header, Sidebar, VideoGrid, FolderChannels (modal), Toast, and RefreshProgress. Loads folders on mount.
+
+Mounts Header, Sidebar, VideoGrid, FolderChannels (modal), Toast, and
+RefreshProgress. Loads folders on mount.
 
 #### `client/src/lib/Header.svelte` — Top Bar
-Hamburger toggle, title, search with clear, gear menu (backup/restore), refresh button with spinner. The completion toast reports new videos, errors/skips, channels checked, API units used by that refresh, API units used for the current Pacific quota day, and the RSS-fallback channel count when nonzero.
+
+Hamburger toggle, title, search with clear, gear menu (backup/restore), refresh
+button with spinner. The completion toast reports new videos, errors/skips,
+channels checked, API units used by that refresh, API units used for the current
+Pacific quota day, and the RSS-fallback channel count when nonzero.
 
 #### `client/src/lib/Sidebar.svelte` — Folder & Channel Navigation
-Recursive folder tree keyed by immutable folder IDs, expandable channels, deduplicated unread counts, favorite toggles, keyboard/touch action menus for folder rename/delete and channel rename/move/remove, drag/drop URL targets, "+ New Folder", and mobile overlay.
+
+Recursive folder tree keyed by immutable folder IDs, expandable channels,
+deduplicated unread counts, favorite toggles, keyboard/touch action menus for
+folder rename/delete and channel rename/move/remove, drag/drop URL targets, "+
+New Folder", and mobile overlay.
 
 #### `client/src/lib/VideoGrid.svelte` — Video Display
-Server-filtered reader view with all/unread/starred/hidden and favorite-channel controls, newest/oldest/favorite/return ordering, infinite scroll, and grid/compact/list density. **Returns first** promotes red-bordered return uploads and keeps each group newest-first.
+
+Server-filtered reader view with all/unread/starred/hidden and favorite-channel
+controls, newest/oldest/favorite/return ordering, infinite scroll, and
+grid/compact/list density. **Returns first** promotes red-bordered return
+uploads and keeps each group newest-first.
 
 #### `client/src/lib/VideoCard.svelte` — Single Video
-Native video and channel links, thumbnail/title/description/date, watched/starred/hidden/copy actions, favorite-channel marker, and a return badge when `highlight_reason` is present.
+
+Native video and channel links, thumbnail/title/description/date,
+watched/starred/hidden/copy actions, favorite-channel marker, and a return badge
+when `highlight_reason` is present.
 
 #### `client/src/lib/FolderChannels.svelte` — Channel Management Modal
-Favorite-first channel list with paste bar, drag-drop, favorite toggle, and remove button. The modal traps focus, closes on Escape, and restores focus to its opener.
+
+Favorite-first channel list with paste bar, drag-drop, favorite toggle, and
+remove button. The modal traps focus, closes on Escape, and restores focus to
+its opener.
 
 #### `client/src/lib/RefreshProgress.svelte` — Live Refresh Overlay
-Bottom-right panel shown while a refresh is active. `done / total` counter, running `+N new` tally, `N errored` suffix when applicable, and one line per currently-fetching channel. Shows up to `CHANNEL_CONCURRENCY_*` lanes (5 for RSS, 20 for API).
+
+Bottom-right panel shown while a refresh is active. `done / total` counter,
+running `+N new` tally, `N errored` suffix when applicable, and one line per
+currently-fetching channel. Shows up to `CHANNEL_CONCURRENCY_*` lanes (5 for
+RSS, 20 for API).
 
 #### `client/src/lib/Toast.svelte` — Notifications
-Fixed-position toast at bottom-center, 3-second auto-dismiss. Success (green), error (red), info (neutral).
+
+Fixed-position toast at bottom-center, 3-second auto-dismiss. Success (green),
+error (red), info (neutral).
 
 ### Docker
 
 **Dockerfile** — multi-stage build:
-1. Stage 1 (`client-build`): installs Svelte deps, runs `vite build`, emits `client/dist/`.
-2. Stage 2 (runtime): Alpine Node 22; temporarily installs `python3 make g++` so `better-sqlite3` can compile for musl, then removes them. Includes `wget` and `tzdata`; `TZ=America/Los_Angeles` is baked in so the nightly backup scheduler fires at 1 am Pacific regardless of host timezone.
 
-**docker-compose.yml**: mounts `./data` to `/app/data`, passes env vars, 512 MB memory limit, health check every 30 s, `restart: unless-stopped`.
+1. Stage 1 (`client-build`): installs Svelte deps, runs `vite build`, emits
+   `client/dist/`.
+2. Stage 2 (runtime): Alpine Node 22; temporarily installs `python3 make g++` so
+   `better-sqlite3` can compile for musl, then removes them. Includes `wget` and
+   `tzdata`; `TZ=America/Los_Angeles` is baked in so the nightly backup
+   scheduler fires at 1 am Pacific regardless of host timezone.
 
-**.dockerignore**: excludes `node_modules`, `client/dist`, `.git`, `.env`, `data/` — necessary so host-built native modules (glibc) don't clobber the image's musl build of `better-sqlite3`.
+**docker-compose.yml**: mounts `./data` to `/app/data`, passes env vars, 512 MB
+memory limit, health check every 30 s, `restart: unless-stopped`.
+
+**.dockerignore**: excludes `node_modules`, `client/dist`, `.git`, `.env`,
+`data/` — necessary so host-built native modules (glibc) don't clobber the
+image's musl build of `better-sqlite3`.
 
 ## Setup
 
@@ -258,13 +426,15 @@ Fixed-position toast at bottom-center, 3-second auto-dismiss. Success (green), e
 3. **APIs & Services > Credentials** → **Create Credentials > API key**
 4. Copy the key
 
-The key is used for `@handle` and video URL resolution. Canonical `/channel/UC...` URLs and RSS refresh work without one. Any refresh mode set to `api` requires the key.
+The key is used for `@handle` and video URL resolution. Canonical
+`/channel/UC...` URLs and RSS refresh work without one. Any refresh mode set to
+`api` requires the key.
 
 ### 2. Configure
 
 Create a `.env` file in the project root:
 
-```
+```env
 YOUTUBE_API_KEY=your_api_key_here
 ```
 
@@ -272,17 +442,18 @@ See [Environment Variables](#environment-variables) for tunable knobs.
 
 ### 3. Add Your Subscriptions
 
-**Option A: Import from PocketTube**
+#### Option A: Import from PocketTube
 
-Export your PocketTube subscriptions (the browser extension provides a JSON export). Drop it in `data/`:
+Export your PocketTube subscriptions (the browser extension provides a JSON
+export). Drop it in `data/`:
 
-```
+```text
 data/youtube_subscription_manager_*.json
 ```
 
 On first startup, WadsTube auto-migrates this to `tube.json`.
 
-**Option B: Start fresh**
+#### Option B: Start fresh
 
 Create `data/tube.json`:
 
@@ -311,10 +482,14 @@ The app runs at `http://localhost:3000`.
 
 ### Refreshing
 
-- Click **Refresh** to pull new videos for the current folder (or all if viewing All).
-- A live panel in the bottom-right shows each channel being fetched, a done/total counter, and a running "+N new" tally.
-- When it finishes, a toast summarizes the result (`Added 42 new videos`, or `No new videos (3 channels errored)`).
-- No channel refresh runs in the background. Closing the app or leaving it idle makes no YouTube channel requests.
+- Click **Refresh** to pull new videos for the current folder (or all if viewing
+  All).
+- A live panel in the bottom-right shows each channel being fetched, a
+  done/total counter, and a running "+N new" tally.
+- When it finishes, a toast summarizes the result (`Added 42 new videos`, or
+  `No new videos (3 channels errored)`).
+- No channel refresh runs in the background. Closing the app or leaving it idle
+  makes no YouTube channel requests.
 
 ### Managing Folders
 
@@ -322,24 +497,36 @@ The app runs at `http://localhost:3000`.
 - **Rename/Delete:** open the folder's `•••` action menu.
 - **View Channels:** choose **Manage channels** from that action menu.
 
-Deleting a folder or channel also purges the corresponding rows from `wadstube.db` so stale subscriptions don't keep appearing in the feed.
+Deleting a folder or channel also purges the corresponding rows from
+`wadstube.db` so stale subscriptions don't keep appearing in the feed.
 
 ### Viewing & Filtering by Channel
 
 - Click the chevron next to a folder to expand channels inline.
-- Click a channel to filter videos to just that channel (click again to deselect).
-- Open a channel's `⋮` action menu for rename, move, or remove; the native menu controls work with keyboard and touch.
+- Click a channel to filter videos to just that channel (click again to
+  deselect).
+- Open a channel's `⋮` action menu for rename, move, or remove; the native menu
+  controls work with keyboard and touch.
 - Use the star next to a channel to add or remove it from Favorites.
 
 ### Adding Channels
 
 - **Drag-and-drop** a YouTube URL onto a folder.
 - **Paste** a URL in the channel list modal.
-- Accepted: `youtube.com/watch?v=...`, `youtube.com/channel/UC...`, `youtube.com/@handle`, `youtu.be/...`, `youtube.com/shorts/...`, `youtube.com/live/...`.
+- Accepted: `youtube.com/watch?v=...`, `youtube.com/channel/UC...`,
+  `youtube.com/@handle`, `youtu.be/...`, `youtube.com/shorts/...`,
+  `youtube.com/live/...`.
 
 ### Backup & Restore
 
-**From the UI:** **Export subscriptions** downloads `tube.json` data and **Import subscriptions** validates and imports that JSON. Import waits for refresh to become idle and snapshots both live files before changing or purging data. **Full backup** streams a bounded-memory POSIX TAR containing `manifest.json`, `tube.json`, and a consistent SQLite snapshot. The manifest records byte counts, SHA-256 checksums, and SQLite `quick_check` proof. Full-bundle restore is intentionally a controlled offline operation; the web app never replaces the live database from an uploaded binary bundle.
+**From the UI:** **Export subscriptions** downloads `tube.json` data and
+**Import subscriptions** validates and imports that JSON. Import waits for
+refresh to become idle and snapshots both live files before changing or purging
+data. **Full backup** streams a bounded-memory POSIX TAR containing
+`manifest.json`, `tube.json`, and a consistent SQLite snapshot. The manifest
+records byte counts, SHA-256 checksums, and SQLite `quick_check` proof.
+Full-bundle restore is intentionally a controlled offline operation; the web app
+never replaces the live database from an uploaded binary bundle.
 
 Verify a downloaded full backup without extracting it:
 
@@ -348,7 +535,9 @@ cd server
 npm run verify-backup -- /path/to/wadstube-full-....tar
 ```
 
-For a controlled full restore, verify and extract to a new empty directory, stop WadsTube, preserve the current data directory, then copy the two verified files into place:
+For a controlled full restore, verify and extract to a new empty directory, stop
+WadsTube, preserve the current data directory, then copy the two verified files
+into place:
 
 ```bash
 cd server
@@ -361,7 +550,10 @@ cp /tmp/wadstube-verified/wadstube.db data/wadstube.db
 docker compose up -d
 ```
 
-**Nightly backups:** `data/backups/YYYY-MM-DD/` gets an atomically published pair of `tube.json` + a consistent `wadstube.db` snapshot (via `VACUUM INTO`) every night at 1 am local time. Catches up on startup if a backup is overdue. GFS retention considers only complete pairs (4 daily + 4 weekly + 4 monthly).
+**Nightly backups:** `data/backups/YYYY-MM-DD/` gets an atomically published
+pair of `tube.json` + a consistent `wadstube.db` snapshot (via `VACUUM INTO`)
+every night at 1 am local time. Catches up on startup if a backup is overdue.
+GFS retention considers only complete pairs (4 daily + 4 weekly + 4 monthly).
 
 To restore a nightly backup:
 
@@ -376,61 +568,86 @@ docker compose restart
 
 User-initiated refreshes support two modes:
 
-| Mode | Cost | Rate limit | Notes |
-|------|------|------------|-------|
-| `rss` | free | YouTube throttles per-IP; can 404/5xx under bursts | 15-entry feeds; no `publishedAfter`; refresh pulls full feed every time, dedup by `video_id` |
-| `api` | 1 unit per channel per refresh | none that you'll hit organically | 50 items per call; 1 unit regardless of `maxResults` |
+| Mode  | Cost                           | Rate limit                                         | Notes                                                                                        |
+| ----- | ------------------------------ | -------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `rss` | free                           | YouTube throttles per-IP; can 404/5xx under bursts | 15-entry feeds; no `publishedAfter`; refresh pulls full feed every time, dedup by `video_id` |
+| `api` | 1 unit per channel per refresh | none that you'll hit organically                   | 50 items per call; 1 unit regardless of `maxResults`                                         |
 
 Some channel-add URL formats use the Data API:
 
-| Action | Cost |
-|--------|------|
-| Add channel via channel URL (`/channel/UC...`) | 0 units |
-| Add channel via video URL (`/watch?v=...`) | 1 unit |
-| Add channel via @handle (`/@name`) | 1 general quota unit (`channels.list(forHandle=...)`) |
-| Shorts classification | 0 units (free HEAD request; transient failures are retried) |
+| Action                                         | Cost                                                        |
+| ---------------------------------------------- | ----------------------------------------------------------- |
+| Add channel via channel URL (`/channel/UC...`) | 0 units                                                     |
+| Add channel via video URL (`/watch?v=...`)     | 1 unit                                                      |
+| Add channel via @handle (`/@name`)             | 1 general quota unit (`channels.list(forHandle=...)`)       |
+| Shorts classification                          | 0 units (free HEAD request; transient failures are retried) |
 
-Under YouTube's June 2026 quota model, a project receives 10,000 general quota units per day, resetting at midnight Pacific. `search.list` also has a separate default limit of 100 calls/day; WadsTube does not use it. At 1,300 channels:
+Under YouTube's June 2026 quota model, a project receives 10,000 general quota
+units per day, resetting at midnight Pacific. `search.list` also has a separate
+default limit of 100 calls/day; WadsTube does not use it. At 1,300 channels:
+
 - **`rss`** everywhere: 0 quota used for refresh.
-- **`api`** for refresh: ~1,300 units per full pass → at most 7 full passes/day; 6 passes (every 4 hours) use ~7,800 units and leave a practical safety margin.
+- **`api`** for refresh: ~1,300 units per full pass → at most 7 full passes/day;
+  6 passes (every 4 hours) use ~7,800 units and leave a practical safety margin.
 
-The default is RSS so clicks consume no API quota. Set `REFRESH_MODE_MANUAL=api` for predictable API-backed manual refreshes.
+The default is RSS so clicks consume no API quota. Set `REFRESH_MODE_MANUAL=api`
+for predictable API-backed manual refreshes.
 
-WadsTube reserves quota immediately before every actual Data API request, including requests that return errors. General and `search.list` buckets are stored separately using the Pacific quota day. A full API refresh uses a conservative preflight snapshot; when the remaining general budget cannot cover every selected due channel, the whole run switches to free RSS instead of returning 429 or starting a partial API pass. Per-call reservation is still authoritative: concurrent URL resolutions or other API work can consume that snapshot, so an exact structured quota/rate-limit response during a run trips a shared breaker and the failed plus later channels use RSS. Authentication, forbidden, not-found, and availability errors remain visible errors. The header and Channel Health panel show what remains, and every refresh report records endpoint calls/units, RSS requests, Shorts probes, the run status/error, remaining daily general budget, `requested_mode`, `effective_mode`, `rss_fallbacks`, and `fallback_reason`. `rss_fallbacks` is a channel count; `rss_requests` is a network-attempt count and can be larger when RSS retries occur.
+WadsTube reserves quota immediately before every actual Data API request,
+including requests that return errors. General and `search.list` buckets are
+stored separately using the Pacific quota day. A full API refresh uses a
+conservative preflight snapshot; when the remaining general budget cannot cover
+every selected due channel, the whole run switches to free RSS instead of
+returning 429 or starting a partial API pass. Per-call reservation is still
+authoritative: concurrent URL resolutions or other API work can consume that
+snapshot, so an exact structured quota/rate-limit response during a run trips a
+shared breaker and the failed plus later channels use RSS. Authentication,
+forbidden, not-found, and availability errors remain visible errors. The header
+and Channel Health panel show what remains, and every refresh report records
+endpoint calls/units, RSS requests, Shorts probes, the run status/error,
+remaining daily general budget, `requested_mode`, `effective_mode`,
+`rss_fallbacks`, and `fallback_reason`. `rss_fallbacks` is a channel count;
+`rss_requests` is a network-attempt count and can be larger when RSS retries
+occur.
 
 ### Smart refresh policy
 
-The default policy waits 2 hours after a successful refresh that discovered a new upload. Separately, a channel whose newest known upload is at least 90 days old has a 6-hour minimum refresh interval; at 365 days the stronger 24-hour rule wins. Add or replace rules with validated JSON:
+The default policy waits 2 hours after a successful refresh that discovered a
+new upload. Separately, a channel whose newest known upload is at least 90 days
+old has a 6-hour minimum refresh interval; at 365 days the stronger 24-hour rule
+wins. Add or replace rules with validated JSON:
 
 ```env
 SMART_REFRESH_POLICY_JSON={"noHistoryIntervalHours":24,"newUploadCooldownHours":2,"failureRetryMinutes":[5,15,30,60],"rules":[{"id":"return_after_3_months","label":"Returned after 3 months","minUploadAgeDays":90,"minRefreshIntervalHours":6},{"id":"return_after_1_year","label":"Returned after 1 year","minUploadAgeDays":365,"minRefreshIntervalHours":24},{"id":"return_after_2_years","label":"Returned after 2 years","minUploadAgeDays":730,"minRefreshIntervalHours":72}]}
 ```
 
-Rules may be listed in any order; the matching rule with the longest refresh interval wins, then the oldest upload threshold breaks ties. Invalid or duplicate rule IDs fail startup rather than silently changing scheduling.
+Rules may be listed in any order; the matching rule with the longest refresh
+interval wins, then the oldest upload threshold breaks ties. Invalid or
+duplicate rule IDs fail startup rather than silently changing scheduling.
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `YOUTUBE_API_KEY` | YouTube Data API key. Optional for RSS-only operation and canonical `/channel/UC...` additions; required for handle/video URL resolution and any `api` refresh mode. Sent in the `x-goog-api-key` header rather than the URL. | — |
-| `PORT` | Server port | `3000` |
-| `DATA_DIR` | Path to data directory | `./data` |
-| `MAX_VIDEOS` | Per-channel retention cap in the DB | `50` |
-| `REFRESH_MODE` | Default refresh mode (`rss` or `api`) — used when the per-path override isn't set | `rss` |
-| `REFRESH_MODE_MANUAL` | Override for web-button refreshes | falls back to `REFRESH_MODE` |
-| `SMART_REFRESH_POLICY_JSON` | Validated policy containing `newUploadCooldownHours`, `noHistoryIntervalHours`, bounded `failureRetryMinutes`, and extensible inactivity `rules` | new upload → 2 h; 90 d → 6 h; 365 d → 24 h; no history → 24 h; failures → 5/15/30/60 m |
-| `YOUTUBE_QUOTA_GENERAL_LIMIT` | General daily-unit budget enforced and displayed by WadsTube | `10000` |
-| `YOUTUBE_QUOTA_SEARCH_LIMIT` | Separate daily `search.list` call budget | `100` |
-| `ALLOWED_ORIGINS` | Optional comma-separated origins for a separate frontend; enables selective CORS responses and preflight while unlisted cross-origin mutations remain blocked | — |
-| `PUBLIC_ORIGIN` | Canonical external app origin (for example `https://tube.example.com`) when a reverse proxy rewrites the internal Host header | — |
-| `TRUST_PROXY` | Express trust-proxy setting for deployments behind a known reverse proxy (for example `1`) | — |
-| `TZ` | Container timezone (affects when nightly backups fire) | `America/Los_Angeles` |
-| `TUBE_UID_GID` | Optional container runtime UID:GID. Before setting, make the bind-mounted `./data` writable by that identity. | `0:0` (existing compatible behavior) |
+| Variable                      | Description                                                                                                                                                                                                                   | Default                                                                                |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `YOUTUBE_API_KEY`             | YouTube Data API key. Optional for RSS-only operation and canonical `/channel/UC...` additions; required for handle/video URL resolution and any `api` refresh mode. Sent in the `x-goog-api-key` header rather than the URL. | —                                                                                      |
+| `PORT`                        | Server port                                                                                                                                                                                                                   | `3000`                                                                                 |
+| `DATA_DIR`                    | Path to data directory                                                                                                                                                                                                        | `./data`                                                                               |
+| `MAX_VIDEOS`                  | Per-channel retention cap in the DB                                                                                                                                                                                           | `50`                                                                                   |
+| `REFRESH_MODE`                | Default refresh mode (`rss` or `api`) — used when the per-path override isn't set                                                                                                                                             | `rss`                                                                                  |
+| `REFRESH_MODE_MANUAL`         | Override for web-button refreshes                                                                                                                                                                                             | falls back to `REFRESH_MODE`                                                           |
+| `SMART_REFRESH_POLICY_JSON`   | Validated policy containing `newUploadCooldownHours`, `noHistoryIntervalHours`, bounded `failureRetryMinutes`, and extensible inactivity `rules`                                                                              | new upload → 2 h; 90 d → 6 h; 365 d → 24 h; no history → 24 h; failures → 5/15/30/60 m |
+| `YOUTUBE_QUOTA_GENERAL_LIMIT` | General daily-unit budget enforced and displayed by WadsTube                                                                                                                                                                  | `10000`                                                                                |
+| `YOUTUBE_QUOTA_SEARCH_LIMIT`  | Separate daily `search.list` call budget                                                                                                                                                                                      | `100`                                                                                  |
+| `ALLOWED_ORIGINS`             | Optional comma-separated origins for a separate frontend; enables selective CORS responses and preflight while unlisted cross-origin mutations remain blocked                                                                 | —                                                                                      |
+| `PUBLIC_ORIGIN`               | Canonical external app origin (for example `https://tube.example.com`) when a reverse proxy rewrites the internal Host header                                                                                                 | —                                                                                      |
+| `TRUST_PROXY`                 | Express trust-proxy setting for deployments behind a known reverse proxy (for example `1`)                                                                                                                                    | —                                                                                      |
+| `TZ`                          | Container timezone (affects when nightly backups fire)                                                                                                                                                                        | `America/Los_Angeles`                                                                  |
+| `TUBE_UID_GID`                | Optional container runtime UID:GID. Before setting, make the bind-mounted `./data` writable by that identity.                                                                                                                 | `0:0` (existing compatible behavior)                                                   |
 
 WadsTube applies same-origin checks to browser mutations, conservative in-memory
-rate limits to quota-sensitive endpoints, and baseline response security headers.
-It does not include user authentication. Put it behind an authenticated HTTPS
-reverse proxy before exposing it to the public internet; configure
+rate limits to quota-sensitive endpoints, and baseline response security
+headers. It does not include user authentication. Put it behind an authenticated
+HTTPS reverse proxy before exposing it to the public internet; configure
 `ALLOWED_ORIGINS` only for intentionally separate frontends.
 
 ## Testing
@@ -444,67 +661,74 @@ npm test
 npm run build
 ```
 
-The server suite uses temporary data directories and covers sequential schema migration,
-Shorts retention/counting, stable folder normalization, PocketTube IDs,
-refresh-coordinated restore/delete behavior, paired recovery snapshots, CORS,
-folder-ID compatibility headers, reader/favorite/health APIs, retry failures and
-rate limits, smart-policy boundaries, return highlighting without initial
-backfill, quota-day/bucket/failure accounting, whole-run and mid-run RSS quota
-fallback, fallback exclusions/concurrency/reporting, FTS search, full-export integrity,
-shutdown draining, and YouTube error handling. The client suite covers channel-cache
-race invalidation, refresh-driven badge reloads, and active-filter cleanup.
+The server suite uses temporary data directories and covers sequential schema
+migration, Shorts retention/counting, stable folder normalization, PocketTube
+IDs, refresh-coordinated restore/delete behavior, paired recovery snapshots,
+CORS, folder-ID compatibility headers, reader/favorite/health APIs, retry
+failures and rate limits, smart-policy boundaries, return highlighting without
+initial backfill, quota-day/bucket/failure accounting, whole-run and mid-run RSS
+quota fallback, fallback exclusions/concurrency/reporting, FTS search,
+full-export integrity, shutdown draining, and YouTube error handling. The client
+suite covers channel-cache race invalidation, refresh-driven badge reloads, and
+active-filter cleanup.
 
 ## Project Structure
 
-```
-wadstube/
-├── server/
-│   ├── index.js              # Express entry point, backup/restore/resolve-url routes
-│   ├── lib/
-│   │   ├── data.js           # Load/save tube.json, folder/channel CRUD, atomic writes
-│   │   ├── db.js             # SQLite wrapper (schema, upserts, prune, VACUUM INTO)
-│   │   ├── frontend.js       # SPA cache policy and stale-asset handling
-│   │   ├── rss.js            # Atom feed fetch + parse with retry/backoff
-│   │   ├── youtube.js        # Data API client (resolveUrl, fetchChannelViaApi, checkIsShort)
-│   │   ├── refresh.js        # Per-channel refresh orchestrator (RSS/API dispatch)
-│   │   ├── refresh-policy.js # Validated declarative due/highlight rules
-│   │   ├── quota.js          # Pacific daily ledger and per-run network metrics
-│   │   ├── backup.js         # Nightly backups with GFS retention
-│   │   ├── full-backup.js    # Checksummed subscription + SQLite export bundle
-│   │   ├── shutdown.js       # Bounded refresh drain helpers
-│   │   ├── restore.js        # Validated, refresh-coordinated restore + recovery snapshot
-│   │   ├── security.js       # Headers, selective CORS/origin policy, rate limits
-│   │   ├── migrate.js        # PocketTube → tube.json one-time migration
-│   │   └── migrate-cache.js  # cache.json → SQLite one-time migration
-│   └── routes/
-│       ├── folders.js        # Folder CRUD + channel management endpoints
-│       ├── videos.js         # Video listing from the DB
-│       ├── channels.js       # Favorites, health, single-channel retry/delete
-│       ├── status.js         # Quota and refresh-run status
-│       └── refresh.js        # Streaming NDJSON refresh endpoints
-├── client/
-│   ├── index.html            # SPA entry point (title, favicon)
-│   ├── src/
-│   │   ├── App.svelte        # Root component
-│   │   ├── app.css           # Global styles (theme, fonts)
-│   │   ├── stores/feed.js    # Svelte stores + NDJSON stream reader
-│   │   └── lib/
-│   │       ├── Header.svelte           # Search, refresh, gear menu
-│   │       ├── Sidebar.svelte          # Sidebar shell and top-level views
-│   │       ├── FolderNode.svelte       # Recursive folder/channel tree + actions
-│   │       ├── VideoGrid.svelte        # Responsive video card grid
-│   │       ├── VideoCard.svelte        # Single video card
-│   │       ├── FolderChannels.svelte   # Channel list modal
-│   │       ├── ChannelHealth.svelte    # Health, stale/error filters, retry
-│   │       ├── RefreshProgress.svelte  # Live multi-lane refresh overlay
-│   │       └── Toast.svelte            # Notification toasts
-│   └── vite.config.js        # Vite config with dev proxy
-├── data/                     # Mounted volume in Docker
-│   ├── tube.json             # Folder/channel data
-│   ├── wadstube.db           # SQLite DB (channels, videos)
-│   └── backups/              # Nightly backups (GFS retention)
-├── Dockerfile                # Multi-stage build (Svelte + Node Alpine)
-├── .dockerignore             # Keep host node_modules out of the image
-├── docker-compose.yml        # Docker config with health check
-└── .env                      # Optional API key and settings (not committed)
+```mermaid
+flowchart LR
+    root["wadstube/"]
+
+    root --> server_dir["server/"]
+    server_dir --> server_index["index.js<br/>Express entry point, backup/restore/resolve-url routes"]
+    server_dir --> lib_dir["lib/"]
+    lib_dir --> data_js["data.js<br/>Load/save tube.json, folder/channel CRUD, atomic writes"]
+    lib_dir --> db_js["db.js<br/>SQLite wrapper: schema, upserts, prune, VACUUM INTO"]
+    lib_dir --> frontend_js["frontend.js<br/>SPA cache policy and stale-asset handling"]
+    lib_dir --> rss_js["rss.js<br/>Atom feed fetch and parse with retry/backoff"]
+    lib_dir --> youtube_js["youtube.js<br/>Data API client: resolveUrl, fetchChannelViaApi, checkIsShort"]
+    lib_dir --> refresh_js["refresh.js<br/>Per-channel refresh orchestrator: RSS/API dispatch"]
+    lib_dir --> refresh_policy_js["refresh-policy.js<br/>Validated declarative due/highlight rules"]
+    lib_dir --> quota_js["quota.js<br/>Pacific daily ledger and per-run network metrics"]
+    lib_dir --> backup_js["backup.js<br/>Nightly backups with GFS retention"]
+    lib_dir --> full_backup_js["full-backup.js<br/>Checksummed subscription and SQLite export bundle"]
+    lib_dir --> shutdown_js["shutdown.js<br/>Bounded refresh drain helpers"]
+    lib_dir --> restore_js["restore.js<br/>Validated, refresh-coordinated restore and recovery snapshot"]
+    lib_dir --> security_js["security.js<br/>Headers, selective CORS/origin policy, rate limits"]
+    lib_dir --> migrate_js["migrate.js<br/>PocketTube to tube.json one-time migration"]
+    lib_dir --> migrate_cache_js["migrate-cache.js<br/>cache.json to SQLite one-time migration"]
+
+    server_dir --> routes_dir["routes/"]
+    routes_dir --> folders_js["folders.js<br/>Folder CRUD and channel management endpoints"]
+    routes_dir --> videos_js["videos.js<br/>Video listing from the DB"]
+    routes_dir --> channels_js["channels.js<br/>Favorites, health, single-channel retry/delete"]
+    routes_dir --> status_js["status.js<br/>Quota and refresh-run status"]
+    routes_dir --> routes_refresh_js["refresh.js<br/>Streaming NDJSON refresh endpoints"]
+
+    root --> client_dir["client/"]
+    client_dir --> client_index["index.html<br/>SPA entry point: title, favicon"]
+    client_dir --> src_dir["src/"]
+    src_dir --> app_svelte["App.svelte<br/>Root component"]
+    src_dir --> app_css["app.css<br/>Global styles: theme, fonts"]
+    src_dir --> feed_js["stores/feed.js<br/>Svelte stores and NDJSON stream reader"]
+    src_dir --> client_lib_dir["lib/"]
+    client_lib_dir --> header_svelte["Header.svelte<br/>Search, refresh, gear menu"]
+    client_lib_dir --> sidebar_svelte["Sidebar.svelte<br/>Sidebar shell and top-level views"]
+    client_lib_dir --> folder_node_svelte["FolderNode.svelte<br/>Recursive folder/channel tree and actions"]
+    client_lib_dir --> video_grid_svelte["VideoGrid.svelte<br/>Responsive video card grid"]
+    client_lib_dir --> video_card_svelte["VideoCard.svelte<br/>Single video card"]
+    client_lib_dir --> folder_channels_svelte["FolderChannels.svelte<br/>Channel list modal"]
+    client_lib_dir --> channel_health_svelte["ChannelHealth.svelte<br/>Health, stale/error filters, retry"]
+    client_lib_dir --> refresh_progress_svelte["RefreshProgress.svelte<br/>Live multi-lane refresh overlay"]
+    client_lib_dir --> toast_svelte["Toast.svelte<br/>Notification toasts"]
+    client_dir --> vite_config["vite.config.js<br/>Vite config with dev proxy"]
+
+    root --> data_dir["data/<br/>Mounted volume in Docker"]
+    data_dir --> tube_json["tube.json<br/>Folder/channel data"]
+    data_dir --> wadstube_db["wadstube.db<br/>SQLite DB: channels, videos"]
+    data_dir --> backups_dir["backups/<br/>Nightly backups with GFS retention"]
+
+    root --> dockerfile["Dockerfile<br/>Multi-stage build: Svelte and Node Alpine"]
+    root --> dockerignore[".dockerignore<br/>Keep host node_modules out of the image"]
+    root --> compose["docker-compose.yml<br/>Docker config with health check"]
+    root --> env[".env<br/>Optional API key and settings; not committed"]
 ```
