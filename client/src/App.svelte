@@ -49,6 +49,7 @@
 <style>
   .app {
     min-height: 100vh;
+    min-height: 100dvh;
     background: var(--app-wash);
   }
   main {

@@ -400,7 +400,7 @@
 </ModalShell>
 
 <style>
-  .tabs { display:flex; gap:5px; overflow-x:auto; padding-bottom:12px; border-bottom:1px solid var(--border); }
+  .tabs { display:flex; gap:5px; overflow-x:auto; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch; padding-bottom:12px; border-bottom:1px solid var(--border); }
   .tabs button { white-space:nowrap; }
   .tabs button.active { background:var(--accent); color:var(--ink); border-color:var(--accent); }
   .tab-panel { padding-top:14px; }
@@ -423,7 +423,7 @@
   .dashboard-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .dashboard-card { border:1px solid var(--border); background:var(--card-bg); border-radius:9px; padding:13px; min-width:0; }
   .wide-card { grid-column:1/-1; } .big-number{font-size:1.55rem;color:var(--heading);font-weight:700}.big-number span{font-size:.8rem;color:var(--text-muted);font-weight:400}
-  .history-table { display:grid; gap:7px; max-height:300px; overflow:auto; padding-right:4px; }
+  .history-table { display:grid; gap:7px; max-height:300px; overflow:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; padding-right:4px; }
   .history-row { display:grid; grid-template-columns:90px minmax(100px,1fr) 80px 70px minmax(145px,auto); align-items:center; gap:8px; color:var(--text-muted); font-size:.72rem; }
   .bar-track { height:9px; background:var(--button); border-radius:999px; overflow:hidden; } .bar-track span { display:block; height:100%; min-width:1px; background:var(--accent); border-radius:inherit; }
   dl { margin:0 0 10px; } dl div { display:flex; justify-content:space-between; gap:12px; padding:5px 0; border-bottom:1px solid var(--border); font-size:.76rem; } dt{color:var(--text-muted)}dd{margin:0;color:var(--heading);text-align:right;overflow-wrap:anywhere}

@@ -47,7 +47,7 @@
 </aside>
 
 <style>
-  aside { position: fixed; top: var(--header-height); left: 0; bottom: 0; width: 280px; background: color-mix(in srgb, var(--sidebar-bg) 96%, transparent); backdrop-filter: blur(18px); border-right: 1px solid var(--border); overflow-y: auto; transform: translateX(-100%); transition: transform .2s; z-index: 150; padding: 10px 0; display: flex; flex-direction: column; }
+  aside { position: fixed; top: var(--header-height); left: 0; bottom: 0; width: 280px; background: color-mix(in srgb, var(--sidebar-bg) 96%, transparent); backdrop-filter: blur(18px); border-right: 1px solid var(--border); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; transform: translateX(-100%); transition: transform .2s; z-index: 150; padding: 10px 0; display: flex; flex-direction: column; }
   aside.open { transform: translateX(0); }
   .overlay { display: none; position: fixed; inset: 0; background: var(--overlay); z-index: 140; border: none; }
   .root { text-align: left; border: 0; background: transparent; color: var(--text); padding: 10px 16px; min-height: 42px; cursor: pointer; }

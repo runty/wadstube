@@ -6,6 +6,7 @@
   export let title;
   export let onClose;
   export let wide = false;
+  export let fillBody = false;
   let dialog;
   let closeButton;
   let returnFocus;
@@ -40,18 +41,19 @@
     <div><h2 id={`${id}-title`}>{title}</h2><slot name="subtitle" /></div>
     <button class="modal-close" type="button" bind:this={closeButton} on:click={() => onClose?.()} aria-label={`Close ${title}`}>×</button>
   </header>
-  <div class="modal-body"><slot /></div>
+  <div class="modal-body" class:fill={fillBody}><slot /></div>
   {#if $$slots.footer}<footer class="modal-footer"><slot name="footer" /></footer>{/if}
 </div>
 
 <style>
   .modal-backdrop { position: fixed; inset: 0; border: 0; background: var(--overlay); z-index: 250; }
-  .modal-shell { position: fixed; z-index: 260; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(620px, 94vw); max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
+  .modal-shell { position: fixed; z-index: 260; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(620px, 94vw); max-height: min(88vh, calc(100dvh - 24px)); display: flex; flex-direction: column; overflow: hidden; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
   .modal-shell.wide { width: min(1040px, 96vw); }
   .modal-header, .modal-footer { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
   .modal-footer { border-bottom: 0; border-top: 1px solid var(--border); justify-content: flex-end; flex-wrap: wrap; }
   .modal-header h2 { margin: 0; color: var(--heading); font-size: 1.2rem; }
   .modal-header :global(p) { color: var(--text-muted); font-size: .8rem; margin: 3px 0 0; }
   .modal-close { margin-left: auto; border: 0; background: transparent; color: var(--text); font-size: 1.6rem; padding: 4px 10px; cursor: pointer; }
-  .modal-body { overflow: auto; padding: 16px 18px; }
+  .modal-body { min-height: 0; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 16px 18px; }
+  .modal-body.fill { display: flex; flex-direction: column; overflow: hidden; }
 </style>

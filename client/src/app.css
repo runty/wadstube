@@ -111,6 +111,7 @@
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--app-wash);
   color: var(--text);
 }
@@ -138,7 +139,7 @@ summary:focus-visible {
   background: var(--accent);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 740px) {
   :root,
   :root[data-theme="light"],
   :root[data-theme="dark"] {

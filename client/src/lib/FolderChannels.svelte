@@ -107,7 +107,7 @@
   }
 </script>
 
-<ModalShell id="folder-channels" title={folderName} onClose={close}>
+<ModalShell id="folder-channels" title={folderName} onClose={close} fillBody>
   <p slot="subtitle">{channels.length} channels · manage favorites, unresolved subscriptions, and additions.</p>
 <div class="manager" class:drag-over={dragOver} role="region" aria-label="Channel manager drop area"
   on:dragover={handleDragOver}
@@ -192,6 +192,8 @@
     position: relative;
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-height: 0;
   }
   .manager.drag-over {
     border-color: var(--accent);
@@ -231,7 +233,11 @@
   .add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .panel-body {
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     padding: 8px 0;
   }
   .channel-row {

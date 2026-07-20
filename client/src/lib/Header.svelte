@@ -381,7 +381,7 @@
   .gear-menu button:hover {
     background: var(--button);
   }
-  @media (max-width: 640px) {
+  @media (max-width: 740px) {
     header {
       padding: 10px 12px;
       gap: 8px;
@@ -484,7 +484,7 @@
   .dismiss:hover {
     opacity: 1;
   }
-  @media (max-width: 640px) {
+  @media (max-width: 740px) {
     .refresh-btn {
       width: 40px;
       height: 40px;
