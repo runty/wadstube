@@ -63,7 +63,8 @@ is used for URL/handle resolution and optional user-initiated API refreshes.
 - `client/src/stores/operations.js` — operations API clients, policy validation,
   scoped Returns batching, and 500-channel client bounds
 - `client/src/lib/Sidebar.svelte` — folder tree, channel filter, and actions
-- `client/src/lib/RefreshPreview.svelte` — frozen-scope plan and confirmation
+- `client/src/lib/RefreshPreview.svelte` — captured folder scope, preview, and
+  confirmation of a freshly recomputed locked plan
 - `client/src/lib/ChannelHealth.svelte` — filtered health and bounded bulk UI
 - `client/src/lib/OperationsPanel.svelte` — rules, quota, system, and backups
 - `client/src/lib/ModalShell.svelte` — shared accessible modal behavior
@@ -115,8 +116,9 @@ ssh shrimp 'bash ~/wadstube-redeploy.sh'
 - Preview never reserves quota or fetches YouTube. POST must recompute under the
   lock rather than trust preview output.
 - Return acknowledgement uses 1–5,000 explicit unique video IDs per request.
-  UI-wide acknowledgement freezes folder/channel/search/favorite/sort scope and
-  repeats bounded batches. Do not add a scope-only destructive POST.
+  UI-wide acknowledgement captures folder/channel/search/favorite/sort scope
+  and drains its live results in bounded batches; matching returns that arrive
+  during the action may be included. Do not add a scope-only destructive POST.
 - Bulk channel mutations accept 1–500 explicit unique canonical IDs. Move only
   changes direct source-folder memberships; nested and other-folder memberships
   remain. Destination collisions merge deterministically.

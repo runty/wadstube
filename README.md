@@ -7,7 +7,7 @@ YouTube subscriptions into folders, pulls new videos via channel RSS feeds (or
 the YouTube Data API — your choice), stores them in SQLite, and presents them in
 a clean, themed web interface. Runs in Docker.
 
-## What's new in v2.1
+## What's new
 
 - Refresh now opens a read-only preview showing the exact folder scope, due and
   skipped counts/reasons, effective mode, and quota required before any network
@@ -146,9 +146,11 @@ flowchart LR
 2. **Select folder** — frontend fetches `/api/videos?folder=X`, which reads from
    `wadstube.db` (no network call).
 3. **Preview** — clicking Refresh GETs `/api/refresh/preview/:folder` (or the
-   all-library preview). The shared planner reports the exact frozen scope,
+   all-library preview). The shared planner reports the selected folder scope,
    membership/due/skipped counts, reasons, effective mode, quota snapshot, and
-   full-pass arithmetic without reserving quota or fetching YouTube.
+   full-pass arithmetic without reserving quota or fetching YouTube. The UI
+   captures that folder selection for confirmation; eligibility is recomputed
+   after POST acquires the lock.
 4. **Refresh** — confirmation POSTs to `/api/refresh/:folder`; the server takes
    the refresh lock, recomputes eligibility with the same planner, and streams
    NDJSON events back (init, start/done per channel, final summary). Each
@@ -372,7 +374,9 @@ supported for older clients and returns `Deprecation: true` plus an HTTP
 - `GET /api/videos/returns?...&limit=1..5000` — exact scoped count plus an
   explicit bounded list of unacknowledged return IDs
 - `POST /api/videos/returns/acknowledge` — acknowledge 1–5,000 explicit unique
-  video IDs; large UI actions repeat bounded batches against a frozen scope
+  video IDs; large UI actions capture the current filter scope, then drain its
+  live unacknowledged results in bounded batches. Returns arriving in that scope
+  while the action runs may also be acknowledged.
 - `PATCH /api/videos/:videoId/state` — update watched, starred, or hidden state
 
 #### `server/routes/channels.js` — Channel Preference & Health API
@@ -698,8 +702,9 @@ Open **Operations & refresh rules** from the gear menu:
   This is a snapshot, not a prediction of when channels will upload or refresh.
 - **System** shows process uptime, refresh lock/tasks, active mode/policy source,
   database counts/size/WAL, subscription counts, and backup-controller state.
-  The cheap status read does not scan the database; **Run database integrity
-  check** explicitly starts the rate-limited `quick_check`.
+  The status read uses one aggregate video-count query but does not run an
+  integrity scan; **Run database integrity check** explicitly starts the
+  rate-limited `quick_check`.
 - **Backups** lists complete nightly pairs and verifies a selected snapshot's
   normalized JSON plus read-only SQLite `quick_check`. Verification never
   restores or changes live data.
@@ -880,7 +885,7 @@ in-place legacy resolution/rollback, Pacific quota history and snapshot-only
 forecasting, cheap versus explicit health checks, staged/on-demand backup
 verification, and controller state. The client suite covers channel-cache race
 invalidation, refresh-driven badge reloads, URL state, modal focus behavior,
-operation response handling, exact Returns scope/batches, and active-filter
+operation response handling, scoped live Returns batches, and active-filter
 cleanup.
 
 ## Project Structure
