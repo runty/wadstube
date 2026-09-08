@@ -140,10 +140,14 @@
         <option value="hidden">Hidden</option>
         <option value="returns">Returns ({$returnCount})</option>
       </select>
-    <label class="favorite-filter" class:active={$favoritesOnly} title="Only show videos from favorite channels">
-      <input type="checkbox" bind:checked={$favoritesOnly} />
-      <span>Favorite channels</span>
-    </label>
+    <button class="favorite-filter" type="button" class:active={$favoritesOnly}
+      aria-label="Favorite channels only" aria-pressed={$favoritesOnly} title="Favorite channels only"
+      on:click={() => favoritesOnly.set(!$favoritesOnly)}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill={$favoritesOnly ? "currentColor" : "none"}
+        stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z" />
+      </svg>
+    </button>
       <select class="sort-select" aria-label="Sort videos" bind:value={$sortOrder}>
         <option value="newest">Newest first</option>
         <option value="oldest">Oldest first</option>
@@ -203,8 +207,7 @@
   .feed-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); font-size: .85rem; }
   .feed-toolbar select, .favorite-filter, .ack-all { min-height: 40px; color: var(--text); background: var(--button); border: 1px solid var(--border); border-radius: 9px; padding: 7px 10px; }
   .feed-toolbar select { cursor: pointer; max-width: 100%; }
-  .favorite-filter { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
-  .favorite-filter input { margin: 0; width: 16px; height: 16px; accent-color: var(--accent-text); flex-shrink: 0; }
+  .favorite-filter { display: grid; place-items: center; width: 44px; padding: 0; flex-shrink: 0; cursor: pointer; }
   .favorite-filter.active { border-color: var(--accent-text); color: var(--accent-text); }
   .sort-select { margin-left: auto; }
   .density { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--bg-soft); border: 1px solid var(--border); }
@@ -221,7 +224,7 @@
   @media (max-width: 640px) {
     .feed-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
     .feed-toolbar select { width: 100%; min-width: 0; padding-left: 8px; padding-right: 2px; }
-    .favorite-filter { min-width: 0; padding: 7px 8px; font-size: .8rem; line-height: 1.2; }
+    .favorite-filter { justify-self: end; }
     .sort-select { margin-left: 0; }
     .density { justify-content: space-between; padding: 0; }
     .density button { flex: 1; min-width: 0; }
