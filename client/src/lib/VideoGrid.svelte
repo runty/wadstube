@@ -134,7 +134,7 @@
 <div class="grid-wrapper">
   <section class="feed-toolbar" aria-label="Feed display options">
       <select class="view-select" aria-label="Show videos" bind:value={$viewFilter}>
-        <option value="all">All visible</option>
+        <option value="all">All</option>
         <option value="unread">Unread</option>
         <option value="starred">Starred videos</option>
         <option value="hidden">Hidden</option>
