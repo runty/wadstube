@@ -67,7 +67,11 @@ module.exports = function (appState) {
     const total = channelIds.length;
     startStream(res, total);
     let alive = true;
-    req.on("close", () => { alive = false; });
+    // Request 'close' can mean the POST body completed, not a disconnected reader.
+    res.on("close", () => { alive = false; clearInterval(heartbeat); });
+    const heartbeat = setInterval(() => {
+      if (alive) writeEvent(res, { type: "heartbeat" });
+    }, 15000);
 
     const onEvent = (ev) => {
       if (!alive) return;
@@ -121,6 +125,7 @@ module.exports = function (appState) {
       console.error(`Refresh ${meta.label || "all"} error:`, err);
       writeEvent(res, { type: "error", error: err.message });
     } finally {
+      clearInterval(heartbeat);
       res.end();
     }
   }

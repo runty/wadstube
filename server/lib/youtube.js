@@ -1,14 +1,6 @@
 const API_BASE = "https://www.googleapis.com/youtube/v3";
-const FETCH_TIMEOUT = 10000;
+const { fetchBuffered } = require("./fetch");
 const { recordNetwork } = require("./quota");
-
-function fetchWithTimeout(url, opts = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-  return fetch(url, { ...opts, signal: controller.signal }).finally(() =>
-    clearTimeout(timer),
-  );
-}
 
 function apiKeyRequired(action) {
   const err = new Error(`YOUTUBE_API_KEY is required to ${action}`);
@@ -53,11 +45,11 @@ function httpStatusForYoutubeError(err, fallback = 500) {
   return fallback;
 }
 
-async function parseApiError(resp, action) {
+function parseApiError(resp, text, action) {
   let reason = `HTTP ${resp.status}`;
   let message = resp.statusText || "YouTube API request failed";
   try {
-    const body = await resp.json();
+    const body = JSON.parse(text);
     const detail = body?.error?.errors?.[0];
     reason = detail?.reason || body?.error?.status || reason;
     message = detail?.message || body?.error?.message || message;
@@ -74,18 +66,19 @@ async function youtubeApiRequest(apiKey, resource, params, action, context = {})
   const endpoint = `${resource}.list`;
   context.quota?.reserve(endpoint, { metrics: context.metrics });
   let resp;
+  let text;
   try {
-    resp = await fetchWithTimeout(
+    ({ response: resp, text } = await fetchBuffered(
       `${API_BASE}/${resource}?${new URLSearchParams(params)}`,
       { headers: { "x-goog-api-key": apiKey } },
-    );
+    ));
   } catch (err) {
     err.code = "youtubeUnavailable";
     throw err;
   }
-  if (!resp.ok) throw await parseApiError(resp, action);
+  if (!resp.ok) throw parseApiError(resp, text, action);
   try {
-    const data = await resp.json();
+    const data = JSON.parse(text);
     if (!data || typeof data !== "object" || Array.isArray(data)) {
       throw new Error("response body was not a JSON object");
     }
@@ -103,7 +96,7 @@ async function youtubeApiRequest(apiKey, resource, params, action, context = {})
 async function checkIsShort(videoId, metrics = null) {
   try {
     recordNetwork(metrics, "shorts");
-    const resp = await fetchWithTimeout(
+    const { response: resp } = await fetchBuffered(
       `https://www.youtube.com/shorts/${videoId}`,
       { method: "HEAD", redirect: "manual" },
     );
@@ -123,8 +116,8 @@ async function resolveUrl(apiKey, url, context = {}) {
     throw codedError("Invalid URL", "invalidInput");
   }
 
-  const hostname = parsed.hostname.replace("www.", "").replace("m.", "");
-  if (!["youtube.com", "youtu.be"].includes(hostname)) {
+  const hostname = parsed.hostname.replace(/^(www\.|m\.)/, "");
+  if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password || !["youtube.com", "youtu.be"].includes(hostname)) {
     throw codedError("Not a YouTube URL", "invalidInput");
   }
 
@@ -141,7 +134,11 @@ async function resolveUrl(apiKey, url, context = {}) {
 
   // channels.list(forHandle=...) is exact and avoids the separate daily
   // search.list call limit.
-  const handleMatch = parsed.pathname.match(/^\/@([A-Za-z0-9_.-]+)\/?$/);
+  let pathname;
+  try { pathname = decodeURIComponent(parsed.pathname); }
+  catch { throw codedError("Malformed URL encoding", "invalidInput"); }
+  // Let YouTube validate its international alphabet; reject path/control syntax.
+  const handleMatch = hostname === "youtube.com" && pathname.match(/^\/@([^\s/\\?#@\p{Cc}]+)(?:\/(?:videos|shorts|streams|featured|playlists|community|about))?\/?$/u);
   if (handleMatch) {
     const handle = handleMatch[1];
     const data = await youtubeApiRequest(
@@ -171,7 +168,7 @@ async function resolveUrl(apiKey, url, context = {}) {
     if (pathMatch) videoId = pathMatch[2];
   }
 
-  if (videoId) {
+  if (videoId && /^[A-Za-z0-9_-]+$/.test(videoId)) {
     const data = await youtubeApiRequest(
       apiKey,
       "videos",
@@ -204,11 +201,11 @@ async function fetchChannelViaApi(apiKey, channelId, context = {}) {
       apiKey,
       "playlistItems",
       {
-        part: "snippet",
+        part: "snippet,contentDetails",
         playlistId: uploadsId,
         maxResults: "50",
         fields:
-          "items(snippet(channelId,channelTitle,title,description,publishedAt,resourceId/videoId,thumbnails/default/url,thumbnails/medium/url))",
+          "items(contentDetails/videoPublishedAt,snippet(channelId,channelTitle,title,description,resourceId/videoId,thumbnails/default/url,thumbnails/medium/url))",
       },
       `refresh channel ${channelId}`,
       context,
@@ -229,6 +226,11 @@ async function fetchChannelViaApi(apiKey, channelId, context = {}) {
     const snippet = item.snippet || {};
     const videoId = snippet.resourceId?.videoId;
     if (!videoId) continue;
+    // Playlist-add time is not video publication time. Missing/private entries
+    // are omitted until YouTube supplies a real date; never manufacture "now".
+    // https://developers.google.com/youtube/v3/docs/playlistItems
+    const published = item.contentDetails?.videoPublishedAt;
+    if (!published || !Number.isFinite(Date.parse(published))) continue;
     if (!channelTitle) channelTitle = snippet.channelTitle || null;
     const thumbs = snippet.thumbnails || {};
     const thumb =
@@ -241,11 +243,11 @@ async function fetchChannelViaApi(apiKey, channelId, context = {}) {
       title: snippet.title || "Untitled",
       description: snippet.description || "",
       thumbnail: thumb,
-      published: snippet.publishedAt || new Date().toISOString(),
+      published: new Date(published).toISOString(),
     });
   }
 
-  return { channelId, status: "ok", videos, channelTitle };
+  return { channelId, status: "ok", source: "api", videos, channelTitle };
 }
 
 module.exports = {

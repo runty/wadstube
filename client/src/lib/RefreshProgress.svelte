@@ -57,7 +57,7 @@
   }
   .count { margin-left: auto; }
   .new {
-    color: var(--accent);
+    color: var(--accent-text);
     font-weight: 600;
   }
   .err { color: var(--danger); }

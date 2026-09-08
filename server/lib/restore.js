@@ -47,10 +47,23 @@ async function restoreData(appState, uploaded, now = new Date()) {
     );
     appState.db.vacuumInto(path.join(snapshotDir, "wadstube.db"));
 
+    const previous = appState.data;
+    saveData(appState.dataDir, normalized.data);
+    let purgedChannels;
+    try {
+      // purgeOrphanChannels is a SQLite transaction: failure rolls it back.
+      purgedChannels = appState.db.purgeOrphanChannels(
+        allReferencedChannelIds(normalized.data),
+      );
+    } catch (err) {
+      try { saveData(appState.dataDir, previous); }
+      catch (rollbackError) {
+        appState.recoveryRequired = snapshotName;
+        err.message += `; file rollback failed: ${rollbackError.message}. Stop and recover from ${snapshotName} before restarting.`;
+      }
+      throw err;
+    }
     appState.data = normalized.data;
-    saveData(appState.dataDir, appState.data);
-    const referenced = allReferencedChannelIds(appState.data);
-    const purgedChannels = appState.db.purgeOrphanChannels(referenced);
 
     return {
       data: appState.data,

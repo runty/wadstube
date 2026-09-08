@@ -48,6 +48,8 @@ if (!API_KEY && REFRESH_MODE_MANUAL === "api") {
 const data = loadData(DATA_DIR);
 const db = new Db(DB_FILE);
 migrateCacheJsonIfNeeded(db, DATA_DIR);
+const expiredStartupVideos = db.expireVideoMetadata();
+if (expiredStartupVideos) console.log(`[metadata] expired ${expiredStartupVideos} cached videos; reader state retained`);
 const storedSmartRefresh = loadSmartRefreshPolicy(db, DEFAULT_SMART_REFRESH_POLICY);
 const purgedStartupOrphans = db.purgeOrphanChannels(allReferencedChannelIds(data));
 if (purgedStartupOrphans) {
@@ -94,6 +96,16 @@ console.log(`DB: ${stats.channelCount} channels, ${stats.videoCount} videos`);
 const { scheduleBackups } = require("./lib/backup");
 const backupController = scheduleBackups(DATA_DIR, db, appState);
 appState.backupController = backupController;
+// Synchronous cleanup cannot interleave with another JS task; respect the shared
+// lock so a refresh/backup/restore is never modified mid-operation.
+const metadataExpiryTimer = setInterval(() => {
+  if (appState.refreshLock || appState.recoveryRequired) return;
+  try {
+    const expired = db.expireVideoMetadata();
+    if (expired) console.log(`[metadata] expired ${expired} cached videos; reader state retained`);
+  } catch (err) { console.error(`[metadata] expiry failed: ${err.message}`); }
+}, 60000);
+metadataExpiryTimer.unref();
 
 // Express app
 const app = express();
@@ -105,6 +117,12 @@ if (process.env.TRUST_PROXY) {
   app.set("trust proxy", value);
 }
 app.use(securityHeaders);
+app.use("/api", (req, res, next) => {
+  if (appState.recoveryRequired && !["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+    return res.status(503).json({ error: "Restore recovery required before further changes or restart", recoverySnapshot: appState.recoveryRequired });
+  }
+  next();
+});
 // 5 MB is comfortably larger than a realistic tube.json (a 2,400-channel
 // backup is ~300 KB). The default 100 KB silently rejects real restores.
 app.use(express.json({ limit: "5mb" }));
@@ -228,6 +246,7 @@ async function shutdown(signal) {
   shuttingDown = true;
   console.log(`[shutdown] ${signal}; stopping schedulers and draining refresh work`);
   backupController?.stop();
+  clearInterval(metadataExpiryTimer);
   const closePromise = new Promise((resolve) => server.close(resolve));
   const { waitForRefreshDrain, waitForTasksDrain } = require("./lib/shutdown");
   const drained = await waitForRefreshDrain(appState, 20_000);

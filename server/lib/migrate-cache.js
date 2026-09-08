@@ -39,6 +39,9 @@ function migrateCacheJsonIfNeeded(db, dataDir) {
       thumbnail: v.thumbnail || "",
       published: v.published || new Date().toISOString(),
       is_short: 0,
+      // An imported cache without an observation date must not gain 30 days
+      // of invented freshness merely because this process imported it today.
+      created_at: v.created_at || "1970-01-01T00:00:00.000Z",
     }));
     db.upsertVideos(rows);
     videoCount += rows.length;

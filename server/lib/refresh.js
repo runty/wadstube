@@ -137,6 +137,7 @@ async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
   metrics.rss_fallbacks ||= 0;
   metrics.fallback_reason ||= fallbackReason;
   const runId = db.startRefreshRun?.(metrics) || null;
+  try { onEvent?.({ type: "run", run_id: runId }); } catch {}
   const finishRun = (summary, status = "complete", error = null) => {
     if (metrics.requested_mode === "api") {
       if (mode === "rss") {
@@ -326,7 +327,7 @@ async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
         short_status: classified.statusById.get(v.video_id) || "unknown",
       },
     );
-    db.upsertVideos(toUpsert);
+    db.upsertVideos(toUpsert, { source: feed.source, observedAt: now });
     for (const video of classified.byId.values()) {
       db.recordVideoClassification?.(video.video_id, video.short_status, now);
     }
@@ -334,7 +335,7 @@ async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
       (latest, video) => !latest || video.published > latest ? video.published : latest,
       null,
     );
-    db.setLatestUploadAt?.(id, latestUpload);
+    db.setLatestUploadAt?.(id, latestUpload, { recompute: true });
     db.pruneChannel(id, keep);
     db.updateChannelMeta(id, {
       last_checked_at: now,
@@ -443,6 +444,9 @@ async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
 // Both operations are synchronous so the check + set can't be split by
 // Node's event loop.
 function tryAcquireLock(appState) {
+  if (appState.recoveryRequired) {
+    throw Object.assign(new Error(`Restore recovery required: ${appState.recoveryRequired}`), { status: 503 });
+  }
   if (appState.refreshLock) return null;
   let release;
   const lock = new Promise((r) => { release = r; });

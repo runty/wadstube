@@ -52,7 +52,7 @@
   .overlay { display: none; position: fixed; inset: 0; background: var(--overlay); z-index: 140; border: none; }
   .root { text-align: left; border: 0; background: transparent; color: var(--text); padding: 10px 16px; min-height: 42px; cursor: pointer; }
   .root:hover { background: var(--hover-bg); }
-  .root.active { color: var(--accent); background: var(--active-bg); border-left: 3px solid var(--accent); }
+  .root.active { color: var(--accent-text); background: var(--active-bg); border-left: 3px solid var(--accent); }
   .tree { flex: 1; }
   .footer { border-top: 1px solid var(--border); padding: 10px; }
   .footer > button, form button { border: 1px solid var(--border); background: var(--button); color: var(--text); border-radius: 7px; padding: 7px 9px; cursor: pointer; }

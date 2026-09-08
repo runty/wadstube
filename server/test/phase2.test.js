@@ -70,7 +70,7 @@ test("v11 migration preserves reader state and adds return acknowledgement", (t)
 
   const db = new Db(file);
   t.after(() => db.close());
-  assert.equal(db.db.pragma("user_version", { simple: true }), 11);
+  assert.equal(db.db.pragma("user_version", { simple: true }), 12);
   assert.equal(
     db.db.prepare("SELECT watched_at FROM video_state WHERE video_id = ?")
       .get("valid-video").watched_at !== null,
@@ -148,8 +148,8 @@ test("return badges, exact scoped IDs, acknowledgement, pagination, and cleanup 
   db.pruneChannel(CHANNEL_A, 2);
   assert.equal(db.db.prepare("SELECT 1 FROM videos WHERE video_id = ?")
     .get("old-prunable"), undefined);
-  assert.equal(db.db.prepare("SELECT 1 FROM video_state WHERE video_id = ?")
-    .get("old-prunable"), undefined);
+  assert.ok(db.db.prepare("SELECT 1 FROM video_state WHERE video_id = ?")
+    .get("old-prunable"), "count pruning preserves reader state");
 
   db.setVideoState("return-tie-z", { starred_at: true });
   db.setVideoState("return-tie-a", { starred_at: true });
@@ -157,9 +157,9 @@ test("return badges, exact scoped IDs, acknowledgement, pagination, and cleanup 
   assert.ok(db.db.prepare("SELECT 1 FROM videos WHERE video_id = ?").get("return-tie-z"));
   assert.ok(db.db.prepare("SELECT 1 FROM video_state WHERE video_id = ?").get("return-tie-z"));
   assert.equal(db.db.prepare("SELECT 1 FROM videos WHERE video_id = ?").get("return-tie-a"), undefined);
-  assert.equal(db.db.prepare("SELECT 1 FROM video_state WHERE video_id = ?").get("return-tie-a"), undefined);
+  assert.ok(db.db.prepare("SELECT 1 FROM video_state WHERE video_id = ?").get("return-tie-a"));
   db.removeChannel(CHANNEL_A);
-  assert.equal(db.db.prepare("SELECT COUNT(*) AS count FROM video_state").get().count, 1);
+  assert.equal(db.db.prepare("SELECT COUNT(*) AS count FROM video_state").get().count, 2);
 });
 
 test("return routes expose exact bounded IDs and acknowledge explicit IDs idempotently", async (t) => {
@@ -324,12 +324,7 @@ test("unresolved replacement is exact, in-place, collision-safe, and API-account
   t.mock.method(global, "fetch", async (url) => {
     resolverFetches++;
     assert.match(String(url), /youtube\/v3\/channels/);
-    return {
-      ok: true,
-      async json() {
-        return { items: [{ id: CHANNEL_B, snippet: { title: "Resolved Two" } }] };
-      },
-    };
+    return Response.json({ items: [{ id: CHANNEL_B, snippet: { title: "Resolved Two" } }] });
   });
 
   let unreadReads = 0;

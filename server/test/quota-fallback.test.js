@@ -33,12 +33,7 @@ function rssNotModified() {
 }
 
 function apiError(reason, message = reason) {
-  return {
-    status: 403,
-    ok: false,
-    statusText: "Forbidden",
-    json: async () => ({ error: { errors: [{ reason, message }] } }),
-  };
+  return Response.json({ error: { errors: [{ reason, message }] } }, { status: 403 });
 }
 
 test("manual API preflight switches the whole due run to RSS instead of returning 429", async (t) => {
@@ -222,12 +217,7 @@ test("a throwing fallback RSS response still reports the redirected channel", as
   };
   t.mock.method(global, "fetch", async (url) => {
     assert.match(String(url), /feeds\/videos\.xml/);
-    return {
-      status: 200,
-      ok: true,
-      text: async () => "<",
-      headers: { get: () => null },
-    };
+    return new Response("<");
   });
 
   const summary = await refreshChannels(db, [id], {
@@ -252,7 +242,7 @@ test("an API run continues through RSS when the local ledger becomes exhausted m
     const value = String(url);
     if (value.includes("/playlistItems?")) {
       apiRequests++;
-      return { status: 200, ok: true, json: async () => ({ items: [] }) };
+      return Response.json({ items: [] });
     }
     if (value.includes("/feeds/videos.xml?")) {
       rssRequests++;

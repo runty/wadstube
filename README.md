@@ -50,6 +50,64 @@ maintainer's Shrimp instance is packaged natively by NixOS.
 
 See [CHANGELOG.md](CHANGELOG.md) for the complete release summary.
 
+### Review repairs (unreleased)
+
+The September review's seven priority fixes are implemented locally; see
+[the dated review](review.md) for findings and verification limits. Deployment
+is a separate operation. The approved metadata-age policy is described below.
+
+- API and RSS GETs allow ten seconds for headers **and the complete body**, with
+  a 2 MiB decoded-body cap. Ordinary browser API reads have a 30-second deadline;
+  non-streaming mutations retain their existing wait behavior because bulk
+  refresh and lock-taking operations can legitimately run much longer.
+- Streaming refreshes send heartbeats every 15 seconds and time out in the
+  browser after 45 seconds without data, not after a fixed total run length.
+  Foreground return/reconnection checks local server status and the recorded run
+  ID. It never starts another YouTube request. Unknown outcomes are labeled as
+  unknown; inspect Operations before retrying. Completion reloads the current
+  folder/filter even if you navigated during refresh.
+- Unicode/percent-encoded handles work with exact API lookup. API video dates
+  use `contentDetails.videoPublishedAt`; missing/invalid dates are omitted until
+  re-observed. Existing rows in a subsequent manual refresh are corrected without
+  erasing watch/star state. Older rows outside the response window are **not**
+  automatically backfilled. To correct recent dates, explicitly refresh the
+  selected channel in API mode (up to 50 returned uploads); quota fallback may
+  instead return only the recent RSS window. No mass correction runs on startup.
+- Light-theme accent text is darker gold. Watched thumbnails are dimmed without
+  reducing text contrast. Phone/coarse-pointer actions retain 44 px heights in
+  every density, with 16 px input text including landscape.
+
+#### Video metadata freshness and expiry
+
+Cached video rows (including Shorts) are deleted 30 days after their last actual
+API/RSS observation, not 30 days after publication. Only returned items renew
+their age. Source and observation time are stored per video; quota fallback
+records RSS provenance. Neither a 304 response nor a Shorts HEAD check renews
+old metadata. Expiry clears affected RSS validators so the next manual refresh
+can obtain a full feed body. No background YouTube requests are introduced.
+
+Cleanup runs before serving requests at startup and once per minute while the
+shared refresh/backup/restore lock is idle. It may be delayed by a held lock or
+storage failure; failures are logged. Legacy rows lack per-item verification
+dates: they expire conservatively using original `created_at`, **not upgrade
+time**. Unknown/invalid dates in imported legacy caches expire immediately.
+Consequently, the first activation may remove many old cached videos.
+
+Watch/star/hidden/return-acknowledgement state is retained separately by video ID
+and channel ID, including across restart and count-based pruning. The card is
+absent from every feed (including Starred) until a manual refresh returns it
+again; its saved state then reattaches. Explicitly deleting a channel still
+deletes that channel's reader state. Subscription folders, channel favorites,
+and user-chosen labels are not removed by video expiry.
+
+This implements a live-video-cache retention policy, not a blanket compliance
+claim under Google's [developer policies](https://developers.google.com/youtube/terms/developer-policies).
+Existing backup/export bundles, `cache.json.migrated`, subscription labels,
+channel-level history, and filesystem/WAL remnants are not scrubbed by this
+change. Backup/archive retention and other API-data categories need a separate
+operational policy; expiry is logical deletion, not secure erasure. Restoring
+an old database reruns expiry at startup without resetting its stored dates.
+
 ## Quick start
 
 ```bash
@@ -186,12 +244,12 @@ flowchart LR
    after POST acquires the lock.
 4. **Refresh** — confirmation POSTs to `/api/refresh/:folder`; the server takes
    the refresh lock, recomputes eligibility with the same planner, and streams
-   NDJSON events back (init, start/done per channel, final summary). Each
+   NDJSON events back (init, run ID, heartbeats, start/done per channel, final summary). Each
    channel is fetched via RSS or the YouTube Data API depending on
    `REFRESH_MODE_MANUAL`. If API quota cannot cover the selected due set, the
    run uses RSS; authoritative quota/rate-limit errors during an API run also
    trip an RSS fallback breaker. New videos are inserted, existing ones have
-   title/description/thumbnail refreshed, and each channel keeps the last
+   title/description/thumbnail/publication date refreshed, and each channel keeps the last
    `MAX_VIDEOS` visible entries plus a bounded Shorts cache.
 5. **Smart selection** — the manual folder/all request checks stored
    refresh/upload timestamps and whether the previous successful refresh
@@ -262,10 +320,13 @@ errors if normalization would drop folders or channels.
 - `videos_fts` — FTS5 search index, transactionally rebuilt on startup; search
   falls back to `LIKE` if FTS5 is unavailable
 
-The schema upgrades additively through SQLite `user_version` 11. The newest
+The schema upgrades additively through SQLite `user_version` 12. Migration 12
+adds metadata provenance/observation dates and reader-state channel association;
+reader state may now intentionally outlive its video metadata. The preceding
 migrations add `app_settings`, `video_state.highlight_acknowledged_at`, its
-index, and cleanup of reader-state rows whose videos no longer exist. Existing
-reader, video, channel, refresh, and quota history is preserved.
+index, and the historical cleanup of reader-state rows whose videos no longer
+exist. That cleanup is not rerun at schema 12. Age-expired video rows are now
+removed by the startup/idle expiry worker while their reader state is retained.
 
 If `cache.json` exists on first boot (from a pre-RSS install), it's imported
 into the DB once and renamed `cache.json.migrated`.
@@ -768,6 +829,16 @@ data. **Full backup** streams a bounded-memory POSIX TAR containing
 records byte counts, SHA-256 checksums, and SQLite `quick_check` proof.
 Full-bundle restore is intentionally a controlled offline operation; the web app
 never replaces the live database from an uploaded binary bundle.
+
+Subscription import publishes its in-memory tree only after atomic JSON save
+and transactional orphan cleanup both succeed. A failed cleanup rolls SQLite
+back and restores the previous JSON. If that compensating JSON write also
+fails, the process blocks API mutations and lock-taking jobs and reports the
+`pre-restore-*` snapshot. **Do not restart or resume writes** until an operator
+has repaired storage and recovered the matching JSON/SQLite pair using the
+controlled offline procedure below. This is explicit recovery, not a claim
+that two files form a crash-atomic transaction. Shrimp service interruption
+still requires disclosure and explicit approval.
 
 Verify a downloaded full backup without extracting it:
 

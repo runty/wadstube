@@ -11,6 +11,7 @@
   --heading: #191305;
   --text-muted: #6f705f;
   --accent: #e8a415;
+  --accent-text: #805300;
   --accent-rgb: 232 164 21;
   --good: #147a5c;
   --good-rgb: 20 122 92;
@@ -51,6 +52,7 @@
   --heading: #f7f1df;
   --text-muted: #a8ad9c;
   --accent: #ffbf47;
+  --accent-text: #ffbf47;
   --accent-rgb: 255 191 71;
   --good: #33d6a6;
   --good-rgb: 51 214 166;
@@ -83,6 +85,7 @@
     --heading: #f7f1df;
     --text-muted: #a8ad9c;
     --accent: #ffbf47;
+    --accent-text: #ffbf47;
     --accent-rgb: 255 191 71;
     --good: #33d6a6;
     --good-rgb: 51 214 166;
@@ -145,4 +148,11 @@ summary:focus-visible {
   :root[data-theme="dark"] {
     --header-height: 119px;
   }
+}
+
+@media (pointer: coarse), (max-width: 900px) {
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+    font-size: 16px !important;
+  }
+  button, summary { min-height: 44px; }
 }

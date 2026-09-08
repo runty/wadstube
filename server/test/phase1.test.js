@@ -65,7 +65,7 @@ test("refresh finalizes skipped count before persistence and return", async () =
 
 test("app settings migrate additively and preserve JSON values", (t) => {
   const { db } = tempDb(t);
-  assert.equal(db.db.pragma("user_version", { simple: true }), 11);
+  assert.equal(db.db.pragma("user_version", { simple: true }), 12);
   assert.equal(db.getSetting(SMART_REFRESH_POLICY_KEY), null);
   const value = { noHistoryIntervalHours: 36, nested: { enabled: true } };
   db.setSetting(SMART_REFRESH_POLICY_KEY, value, "2026-07-19T00:00:00.000Z");

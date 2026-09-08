@@ -1,10 +1,65 @@
 import { writable, get } from "svelte/store";
+import { fetchRequest as fetch } from "./request.js";
 import { acknowledgeAllReturnBatches, acknowledgeReturns, getReturns, resolveSubscription } from "./operations.js";
 
 export const folders = writable([]);
 export const videos = writable([]);
 export const activeFolder = writable(null);
 export const refreshing = writable(false);
+export const serverRefreshing = writable(false);
+export const refreshRecovery = writable("");
+let refreshController;
+let reconcilePending = false;
+let reconciling = false;
+let pendingRunId = null;
+let refreshAttempt = 0;
+try { pendingRunId = Number(sessionStorage.getItem("wadstube-refresh-run")) || null; } catch {}
+
+export async function reconcileRefresh() {
+  if (reconciling || refreshController) return;
+  reconciling = true;
+  const attempt = refreshAttempt;
+  const needsOutcome = reconcilePending || pendingRunId !== null;
+  try {
+    const resp = await fetch("/api/status/refresh");
+    if (!resp.ok) throw new Error(`Status unavailable (${resp.status})`);
+    const status = await resp.json();
+    if (attempt !== refreshAttempt) return;
+    serverRefreshing.set(!!status.running);
+    refreshRuns.set(status.recentRuns || []);
+    const run = status.recentRuns?.find(run => run.id === pendingRunId);
+    reconcilePending = !!status.running;
+    if (status.running) {
+      refreshRecovery.set("A server refresh or data operation is still running. Checking status; no refresh will be restarted.");
+    } else if (needsOutcome) {
+      refreshRecovery.set(run
+        ? `Server refresh #${run.id}: ${run.status}${run.errors ? ` (${run.errors} channel errors)` : ""}. See Operations for the report.`
+        : "Server is idle. A matching refresh outcome could not be confirmed; check Operations before retrying.");
+      pendingRunId = null;
+      try { sessionStorage.removeItem("wadstube-refresh-run"); } catch {}
+      await Promise.allSettled([loadFolders(), reloadCachedChannelLists(), reloadCurrentVideosAndReturns(), loadQuotaStatus()]);
+    }
+  } catch {
+    if (attempt !== refreshAttempt) return;
+    reconcilePending = true;
+    refreshRecovery.set("Server status unavailable. The refresh may still be running; reconnect to check its outcome.");
+  } finally { reconciling = false; }
+}
+
+export function startRefreshRecovery() {
+  const resume = () => {
+    if (document.visibilityState === "hidden") return;
+    if (refreshController) refreshController.abort(new Error("Refresh connection resumed; checking the server report"));
+    else void reconcileRefresh();
+  };
+  window.addEventListener("online", resume);
+  document.addEventListener("visibilitychange", resume);
+  const timer = setInterval(() => {
+    if (reconcilePending && document.visibilityState !== "hidden") void reconcileRefresh();
+  }, 15000);
+  void reconcileRefresh();
+  return () => { clearInterval(timer); window.removeEventListener("online", resume); document.removeEventListener("visibilitychange", resume); };
+}
 export const error = writable(null);
 export const sidebarOpen = writable(false);
 export const showChannelsFor = writable(null);
@@ -112,17 +167,17 @@ export async function loadVideos(folder, opts = {}) {
 
   _abortController?.abort();
   _abortController = new AbortController();
-  let resp;
+  let data;
   try {
-    resp = await fetch(buildVideosUrl({ folder, channelId, q, view, favorites, sort }), {
+    const resp = await fetch(buildVideosUrl({ folder, channelId, q, view, favorites, sort }), {
       signal: _abortController.signal,
     });
+    if (!resp.ok) throw new Error(`Failed to load videos (${resp.status})`);
+    data = await resp.json();
   } catch (err) {
     if (err.name === "AbortError") return;
     throw err;
   }
-  if (!resp.ok) throw new Error(`Failed to load videos (${resp.status})`);
-  const data = await resp.json();
   if (seq !== _loadSeq) return; // a newer request has since fired
 
   videos.set(data.videos || []);
@@ -559,7 +614,22 @@ export function startUrlSync() {
 }
 
 export async function refreshFolder(folder) {
+  if (refreshController) throw new Error("A refresh is already connected");
+  const controller = new AbortController();
+  refreshAttempt++;
+  pendingRunId = null;
+  try { sessionStorage.removeItem("wadstube-refresh-run"); } catch {}
+  refreshController = controller;
+  reconcilePending = false;
+  serverRefreshing.set(false);
+  let timer;
+  const resetDeadline = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => controller.abort(new Error("Refresh connection timed out; checking the server report")), 45000);
+  };
+  resetDeadline();
   refreshing.set(true);
+  refreshRecovery.set("");
   error.set(null);
   refreshProgress.set({ active: true, total: 0, done: 0, newCount: 0, errors: 0, slots: [] });
 
@@ -569,9 +639,10 @@ export async function refreshFolder(folder) {
         ? `${API}/api/refresh/${encodeURIComponent(folder)}`
         : `${API}/api/refresh`;
 
-    const resp = await fetch(url, {
+    const resp = await globalThis.fetch(url, {
       method: "POST",
       headers: { Accept: "application/x-ndjson" },
+      signal: controller.signal,
     });
 
     if (!resp.ok) {
@@ -591,7 +662,9 @@ export async function refreshFolder(folder) {
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
+      resetDeadline();
       buf += decoder.decode(value, { stream: true });
+      if (buf.length > 1024 * 1024) throw new Error("Refresh event exceeded the size limit");
       let idx;
       while ((idx = buf.indexOf("\n")) >= 0) {
         const line = buf.slice(0, idx).trim();
@@ -600,6 +673,10 @@ export async function refreshFolder(folder) {
         let ev;
         try { ev = JSON.parse(line); } catch { continue; }
         applyEvent(ev);
+        if (ev.type === "run" && Number.isSafeInteger(ev.run_id)) {
+          pendingRunId = ev.run_id;
+          try { sessionStorage.setItem("wadstube-refresh-run", String(pendingRunId)); } catch {}
+        }
         if (ev.type === "summary") summary = ev;
         if (ev.type === "error") throw new Error(ev.error || "Refresh failed");
       }
@@ -609,11 +686,14 @@ export async function refreshFolder(folder) {
     // refresh finished partially (proxy idle timeout, network blip, etc).
     // Don't pretend it was successful.
     if (!summary) throw new Error("Refresh stream ended before completion");
+    clearTimeout(timer);
+    pendingRunId = null;
+    try { sessionStorage.removeItem("wadstube-refresh-run"); } catch {}
 
     const reloads = await Promise.allSettled([
       loadFolders(),
       reloadCachedChannelLists(),
-      loadVideos(folder, {
+      loadVideos(get(activeFolder), {
         channelId: get(activeChannelId) || null,
         q: get(searchQuery) || null,
         view: get(viewFilter),
@@ -630,13 +710,19 @@ export async function refreshFolder(folder) {
       : 0;
     return { ...summary, reloadFailures: directFailures + channelReloadFailures };
   } catch (err) {
+    reconcilePending = true;
+    refreshRecovery.set("Refresh connection interrupted. Checking the server; do not assume it failed or start another refresh.");
     const msg = (err?.message || "").trim() || "Something went wrong";
     if (!err?.message) console.error("refresh failed without a message:", err);
     error.set(msg);
     throw err;
   } finally {
+    clearTimeout(timer);
+    controller.abort();
+    refreshController = null;
     refreshing.set(false);
     refreshProgress.update((p) => ({ ...p, active: false }));
+    if (reconcilePending) void reconcileRefresh();
   }
 }
 

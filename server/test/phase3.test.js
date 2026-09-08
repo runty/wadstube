@@ -132,7 +132,7 @@ test("quota ledger uses Pacific days, separate buckets, failure accounting, and 
   let fetches = 0;
   t.mock.method(global, "fetch", async () => {
     fetches++;
-    return { ok: false, status: 403, statusText: "Forbidden", json: async () => ({ error: { errors: [{ reason: "forbidden" }] } }) };
+    return Response.json({ error: { errors: [{ reason: "forbidden" }] } }, { status: 403 });
   });
   await assert.rejects(() => youtubeApiRequest("key", "videos", { part: "snippet", id: "x" }, "test", { quota }), /forbidden/);
   assert.equal(fetches, 1);
@@ -154,7 +154,7 @@ test("return upload is highlighted only after a prior stale refresh and run usag
     if (value.includes("/playlistItems?")) {
       const items = [{ snippet: { channelId: CHANNEL, channelTitle: "Returning", title: "Old", publishedAt: oldPublished, resourceId: { videoId: "old-video" }, thumbnails: {} } }];
       if (pass === 2) items.push({ snippet: { channelId: CHANNEL, channelTitle: "Returning", title: "Return", publishedAt: new Date().toISOString(), resourceId: { videoId: "return-video" }, thumbnails: {} } });
-      return { ok: true, status: 200, json: async () => ({ items }) };
+      return Response.json({ items: items.map(item => ({ ...item, contentDetails: { videoPublishedAt: item.snippet.publishedAt } })) });
     }
     return { status: 303 };
   });

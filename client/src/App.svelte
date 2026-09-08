@@ -1,5 +1,6 @@
 <script>
   import { onMount } from "svelte";
+  import { startRefreshRecovery, refreshRecovery } from "./stores/feed.js";
   import Header from "./lib/Header.svelte";
   import Sidebar from "./lib/Sidebar.svelte";
   import VideoGrid from "./lib/VideoGrid.svelte";
@@ -15,12 +16,13 @@
 
   onMount(() => {
     const stopUrlSync = startUrlSync();
+    const stopRecovery = startRefreshRecovery();
     loadFolders().catch(() => error.set("Failed to load folders. Is the server running?"));
 
     if (window.innerWidth > 900) {
       sidebarOpen.set(true);
     }
-    return stopUrlSync;
+    return () => { stopUrlSync(); stopRecovery(); };
   });
 </script>
 
@@ -28,6 +30,7 @@
   <Header />
   <Sidebar />
   <main>
+    {#if $refreshRecovery}<p class="recovery" role="status">{$refreshRecovery}</p>{/if}
     <VideoGrid />
   </main>
   {#if $showChannelsFor}
@@ -47,6 +50,7 @@
 </div>
 
 <style>
+  .recovery { padding: 12px; margin: 12px; background: var(--card-bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; }
   .app {
     min-height: 100vh;
     min-height: 100dvh;

@@ -1,12 +1,12 @@
 const { XMLParser } = require("fast-xml-parser");
 const { recordNetwork } = require("./quota");
+const { fetchBuffered } = require("./fetch");
 
 const FEED_BASE = "https://www.youtube.com/feeds/videos.xml";
 // Keep concurrency low — YouTube's RSS endpoint starts returning 404/5xx
 // under bursty traffic from a single IP. With ~2k channels, a wider fan-out
 // tripped the throttle on nearly every request during manual refreshes.
 const CONCURRENCY = 5;
-const FETCH_TIMEOUT = 10000;
 // Exponential retry delays in ms; length = number of retries after the
 // initial attempt.
 const RETRY_DELAYS_MS = [1000, 3000];
@@ -18,14 +18,6 @@ const parser = new XMLParser({
   removeNSPrefix: true,
   parseTagValue: false,
 });
-
-function fetchWithTimeout(url, opts = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-  return fetch(url, { ...opts, signal: controller.signal }).finally(() =>
-    clearTimeout(timer),
-  );
-}
 
 let _pLimit;
 async function getPLimit() {
@@ -82,7 +74,7 @@ async function fetchOnce(channelId, cached, context = {}) {
   if (cached.last_etag) headers["If-None-Match"] = cached.last_etag;
   if (cached.last_modified) headers["If-Modified-Since"] = cached.last_modified;
   recordNetwork(context.metrics, "rss");
-  return fetchWithTimeout(url, { headers });
+  return fetchBuffered(url, { headers }, { discardErrors: true });
 }
 
 // Result shape:
@@ -90,16 +82,18 @@ async function fetchOnce(channelId, cached, context = {}) {
 //     etag, lastModified, error? }
 async function fetchChannelFeed(channelId, cached = {}, context = {}) {
   let resp;
+  let xml;
   let lastErr;
   try {
-    resp = await fetchOnce(channelId, cached, context);
+    ({ response: resp, text: xml } = await fetchOnce(channelId, cached, context));
     for (const delay of RETRY_DELAYS_MS) {
       if (resp.status < 500 && resp.status !== 404) break;
       await new Promise((r) => setTimeout(r, delay));
-      resp = await fetchOnce(channelId, cached, context);
+      ({ response: resp, text: xml } = await fetchOnce(channelId, cached, context));
     }
   } catch (err) {
     lastErr = err;
+    resp = null;
   }
 
   if (!resp) {
@@ -118,11 +112,11 @@ async function fetchChannelFeed(channelId, cached = {}, context = {}) {
     };
   }
 
-  const xml = await resp.text();
   const { channelTitle, videos } = parseFeed(xml, channelId);
   return {
     channelId,
     status: "ok",
+    source: "rss",
     videos,
     channelTitle,
     etag: resp.headers.get("etag"),

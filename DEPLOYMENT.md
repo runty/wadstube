@@ -4,6 +4,25 @@ WadsTube has two supported release paths: portable Docker Compose and the
 maintainer's native NixOS service on `shrimp`. Both preserve application state
 outside the immutable application build.
 
+## Unreleased migration 12: activation warning
+
+This version expires live cached video metadata after 30 days without an actual
+RSS/API observation. Startup can delete many legacy rows, using their original
+storage dates conservatively. Reader state is retained; cards disappear until
+re-observed. Obtain a verified matching pre-upgrade `tube.json`/SQLite backup
+before activation. Do not run this checkout against production data merely to
+evaluate it. This work has only been tested with synthetic data.
+
+An older schema-11 binary cannot open the upgraded schema-12 database. Rolling
+back code alone is not sufficient: use a controlled, approved offline restore
+of the matching pre-upgrade pair, preserving the newer pair first. Such a
+restore loses post-backup changes unless reconciled separately. Existing
+backups/archives are not deleted by the expiry worker.
+
+After activation, check the logged expiry count, retained reader-state count,
+and schema version; do not require the cached-video count to remain unchanged.
+For Shrimp, disclose affected services and obtain downtime approval separately.
+
 ## Docker Compose
 
 1. Back up the bind-mounted `data/` directory.
@@ -42,23 +61,28 @@ repository. The old `~/wadstube-redeploy.sh` Docker workflow is obsolete.
 5. Before touching live state, confirm the host is `shrimp`, the checkout is
    clean, `wadstube.service` is active, and `/api/status/refresh` reports that no
    refresh is running. Capture `/api/status/system` database counts.
-6. Fast-forward `/home/phobus/nixstuff` and build without switching:
+6. Fast-forward `/home/phobus/nixstuff` and evaluate without switching:
 
    ```bash
    cd /home/phobus/nixstuff
    git fetch origin main
    git merge --ff-only origin/main
-   nixos-rebuild build --flake .#shrimp
+   nix flake check --no-build
    ```
 
-7. Disclose the brief WadsTube restart and obtain explicit approval. Activate:
+   Follow `nixstuff/AGENTS.md` for platform evaluation requirements. A separate
+   dry build is not part of the default workflow unless explicitly requested.
+
+7. Determine all affected units, disclose expected downtime, and obtain explicit
+   approval. Check `hostname` is `shrimp` immediately before activation:
 
    ```bash
+   hostname
    sudo nixos-rebuild switch --flake .#shrimp
    ```
 
 8. Verify `wadstube.service`, the new store path and reported source version,
-   local and public HTTP responses, unchanged database counts, idle refresh and
+   local and public HTTP responses, expected database counts after expiry, idle refresh and
    backup state, and the intended frontend asset or API behavior.
 
 The switch restarts only `wadstube.service` when WadsTube is the sole changed

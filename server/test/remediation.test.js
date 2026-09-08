@@ -25,15 +25,11 @@ function tempDb(t) {
 }
 
 function apiResponse(channelId, videoId) {
-  return {
-    ok: true,
-    status: 200,
-    json: async () => ({ items: [{ snippet: {
+  return Response.json({ items: [{ contentDetails: { videoPublishedAt: "2026-01-01T00:00:00.000Z" }, snippet: {
       channelId, channelTitle: channelId, title: videoId,
       publishedAt: "2026-01-01T00:00:00.000Z",
       resourceId: { videoId }, thumbnails: {},
-    } }] }),
-  };
+    } }] });
 }
 
 test("attempt and success timestamps split; failed no-history channels use bounded backoff", (t) => {

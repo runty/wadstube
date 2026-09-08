@@ -267,7 +267,7 @@
     white-space: nowrap;
   }
   .channel-link:hover {
-    color: var(--accent);
+    color: var(--accent-text);
   }
   .channel-id {
     color: var(--text-muted);
@@ -290,7 +290,7 @@
     line-height: 1;
     border-radius: 4px;
   }
-  .favorite-btn.active { color: var(--accent); }
+  .favorite-btn.active { color: var(--accent-text); }
   .remove-btn:hover { color: var(--danger); background: var(--button); }
   .status-msg {
     color: var(--text-muted);
@@ -304,7 +304,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--accent);
+    color: var(--accent-text);
     font-size: 1.1rem;
     font-weight: 600;
     pointer-events: none;

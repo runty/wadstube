@@ -239,6 +239,18 @@ class Db {
           )
         `);
       },
+      () => {
+        addColumn("videos", "metadata_source", "TEXT NOT NULL DEFAULT 'legacy'");
+        addColumn("videos", "metadata_observed_at", "TEXT");
+        addColumn("video_state", "channel_id", "TEXT");
+        this.db.exec(`
+          UPDATE video_state SET channel_id = (
+            SELECT channel_id FROM videos WHERE videos.video_id = video_state.video_id
+          );
+          CREATE INDEX IF NOT EXISTS idx_video_state_channel ON video_state(channel_id);
+          CREATE INDEX IF NOT EXISTS idx_videos_metadata_age ON videos(julianday(COALESCE(metadata_observed_at, created_at)));
+        `);
+      },
     ];
     let version = this.db.pragma("user_version", { simple: true });
     if (version > migrations.length) throw new Error(`Database schema ${version} is newer than this app supports`);
@@ -308,12 +320,13 @@ class Db {
       `),
       setVideoState: this.db.prepare(`
         INSERT INTO video_state
-          (video_id, watched_at, starred_at, hidden_at,
+          (video_id, channel_id, watched_at, starred_at, hidden_at,
            highlight_acknowledged_at, updated_at)
         VALUES
-          (@video_id, @watched_at, @starred_at, @hidden_at,
+          (@video_id, (SELECT channel_id FROM videos WHERE video_id = @video_id), @watched_at, @starred_at, @hidden_at,
            @highlight_acknowledged_at, @updated_at)
         ON CONFLICT(video_id) DO UPDATE SET
+          channel_id = excluded.channel_id,
           watched_at = excluded.watched_at,
           starred_at = excluded.starred_at,
           hidden_at = excluded.hidden_at,
@@ -326,8 +339,8 @@ class Db {
       `),
       acknowledgeHighlight: this.db.prepare(`
         INSERT INTO video_state
-          (video_id, highlight_acknowledged_at, updated_at)
-        SELECT video_id, ?, ? FROM videos
+          (video_id, channel_id, highlight_acknowledged_at, updated_at)
+        SELECT video_id, channel_id, ?, ? FROM videos
         WHERE video_id = ? AND highlight_reason IS NOT NULL
         ON CONFLICT(video_id) DO UPDATE SET
           highlight_acknowledged_at = excluded.highlight_acknowledged_at,
@@ -338,12 +351,15 @@ class Db {
         INSERT INTO videos
           (video_id, channel_id, title, description, thumbnail,
            published, is_short, short_status, highlight_reason,
-           pending_highlight_reason, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           pending_highlight_reason, created_at, metadata_source, metadata_observed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(video_id) DO UPDATE SET
           title = excluded.title,
           description = excluded.description,
           thumbnail = excluded.thumbnail,
+          published = excluded.published,
+          metadata_source = excluded.metadata_source,
+          metadata_observed_at = excluded.metadata_observed_at,
           is_short = CASE
             WHEN videos.short_status = 'unknown' AND excluded.short_status != 'unknown'
               THEN excluded.is_short
@@ -406,7 +422,7 @@ class Db {
       ),
       deleteChannelVideoState: this.db.prepare(`
         DELETE FROM video_state
-        WHERE video_id IN (SELECT video_id FROM videos WHERE channel_id = ?)
+        WHERE channel_id = ?
       `),
       deleteChannel: this.db.prepare(`DELETE FROM channels WHERE id = ?`),
       deleteVideoState: this.db.prepare(`DELETE FROM video_state WHERE video_id = ?`),
@@ -493,8 +509,16 @@ class Db {
     `).run(error || "Refresh failed", at, id);
   }
 
-  setLatestUploadAt(id, latestUploadAt) {
+  setLatestUploadAt(id, latestUploadAt, { recompute = false } = {}) {
     if (!latestUploadAt) return;
+    if (recompute) {
+      // Re-observed publication dates can move backwards after correcting a
+      // playlist-add timestamp. Include retained rows outside the latest feed.
+      this.db.prepare(`UPDATE channels SET latest_upload_at =
+        COALESCE((SELECT MAX(published) FROM videos WHERE channel_id = ?), ?)
+        WHERE id = ?`).run(id, latestUploadAt, id);
+      return;
+    }
     this.db.prepare(`
       UPDATE channels SET latest_upload_at = CASE
         WHEN latest_upload_at IS NULL OR latest_upload_at < ? THEN ?
@@ -574,7 +598,7 @@ class Db {
   }
 
   setVideoState(videoId, changes) {
-    const video = this.db.prepare("SELECT 1 FROM videos WHERE video_id = ?").get(videoId);
+    const video = this.db.prepare("SELECT channel_id FROM videos WHERE video_id = ?").get(videoId);
     if (!video) throw new Error(`Video "${videoId}" not found`);
     const current = this.stmts.getVideoState.get(videoId) || {};
     const now = new Date().toISOString();
@@ -656,7 +680,9 @@ class Db {
 
   // videos: [{ video_id, channel_id, title, description, thumbnail,
   //            published, short_status }]
-  upsertVideos(videos) {
+  upsertVideos(videos, { source = "legacy", observedAt = new Date().toISOString() } = {}) {
+    if (!["legacy", "rss", "api"].includes(source)) throw new Error("Invalid metadata source");
+    if (!Number.isFinite(Date.parse(observedAt))) throw new Error("Invalid metadata observation date");
     const now = new Date().toISOString();
     const tx = this.db.transaction((rows) => {
       for (const v of rows) {
@@ -676,7 +702,9 @@ class Db {
           status,
           v.highlight_reason || null,
           v.pending_highlight_reason || null,
-          now,
+          v.created_at || now,
+          source,
+          source === "legacy" ? null : new Date(observedAt).toISOString(),
         );
       }
     });
@@ -692,11 +720,24 @@ class Db {
         channelId, channelId, keep, channelId, keep,
       );
       for (const row of rows) {
-        this.stmts.deleteVideoState.run(row.video_id);
         this.stmts.deleteVideo.run(row.video_id);
       }
     });
     tx();
+  }
+
+  // Local cache maintenance only. Reader state deliberately outlives metadata.
+  expireVideoMetadata(now = new Date()) {
+    const cutoff = new Date(new Date(now).getTime() - 30 * 86400000).toISOString();
+    return this.db.transaction(() => {
+      const stale = `julianday(COALESCE(metadata_observed_at, created_at)) <= julianday(?)
+        OR julianday(COALESCE(metadata_observed_at, created_at)) IS NULL`;
+      // A 304 cannot tell us which old rows still belong to the current feed.
+      // Force a full body on the NEXT manual refresh, never a background fetch.
+      this.db.prepare(`UPDATE channels SET last_etag = NULL, last_modified = NULL
+        WHERE id IN (SELECT channel_id FROM videos WHERE ${stale})`).run(cutoff);
+      return this.db.prepare(`DELETE FROM videos WHERE ${stale}`).run(cutoff).changes;
+    })();
   }
 
   // --- reads ---

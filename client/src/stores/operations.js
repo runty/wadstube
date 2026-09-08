@@ -1,4 +1,5 @@
 const API = "";
+import { fetchRequest as fetch } from "./request.js";
 
 async function jsonRequest(url, options) {
   const response = await fetch(`${API}${url}`, options);

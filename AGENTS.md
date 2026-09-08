@@ -70,7 +70,7 @@ refreshes.
 - `client/src/lib/ChannelHealth.svelte` — filtered health and bounded bulk UI
 - `client/src/lib/OperationsPanel.svelte` — rules, quota, system, and backups
 - `client/src/lib/ModalShell.svelte` — shared accessible modal behavior
-- `client/src/app.css` — minimal orange theme and responsive styling
+- `client/src/app.css` — gold theme, contrasting text accents, and responsive styling
 
 ## Commands
 
@@ -136,13 +136,33 @@ cd client && npm run dev
 - Nightly backup must validate normalization-compatible version 1 JSON and run
   read-only SQLite `quick_check` before publication. Failure must preserve the
   previous same-day pair. Verification accepts only strict valid dates.
+- Upstream GET deadlines cover headers and the complete decoded body, capped at
+  2 MiB. RSS retry/error bodies are cancelled. Preserve exact quota codes.
+- API publication dates come from `contentDetails.videoPublishedAt`; skip
+  missing/invalid dates, never substitute playlist-add time or the current time.
+  Re-observed dates may correct existing rows; preserve reader state.
+- Publish restored subscriptions in memory only after file save and transactional
+  orphan cleanup succeed. Failed cleanup must compensate the file save. If
+  compensation fails, block further mutations and recover before restarting.
+- Browser foreground/status polling is local/read-only, never another YouTube
+  refresh. Keep NDJSON heartbeat, idle deadline, and exact run-ID reconciliation.
+- Cached video metadata expires 30 days after its last actual API/RSS observation.
+  Legacy rows use original `created_at` conservatively, never the upgrade date.
+  Expiry and count pruning retain reader state; explicit channel deletion removes
+  its state via `video_state.channel_id`, even after cached videos have expired.
+- Local expiry runs at startup and every minute when the shared lock is idle.
+  It must never fetch YouTube. A 304/Shorts probe cannot renew metadata age;
+  expiry clears affected RSS validators for the next explicit refresh.
 
 ## Theming
 
-- Light accent: `#ea580c`; dark accent: `#f97316`
+- Gold fill accent: light `#e8a415`, dark `#ffbf47`.
+- Use `--accent-text` for accent text: light `#805300`, dark `#ffbf47`.
 - Respect `prefers-color-scheme`.
 - Use Comic Sans MS / Comic Neue with the existing iOS fallback.
-- Use CSS `var(--accent)` for accent colors.
+- Use CSS `var(--accent)` for accent fills; never use a low-contrast fill as small text.
+- Phone/coarse-pointer controls keep 44 px tap heights and 16 px input text;
+  compact density must not shrink those hit areas. Dim watched thumbnails, not text.
 
 ## Data format
 
@@ -161,13 +181,14 @@ cd client && npm run dev
 Load and restore normalize missing arrays, cap folder depth at four, require
 resolved IDs matching `^UC[A-Za-z0-9_-]{22}$`, and strip prototype keys.
 
-`wadstube.db` uses WAL mode and additive migrations through `user_version` 11.
+`wadstube.db` uses WAL mode and additive migrations through `user_version` 12.
 Core tables are:
 
 - `channels` — title, RSS hints, favorite, attempts/successes, latest upload,
   previous-upload flag, and failure state
-- `videos` — metadata, Shorts retry state, and pending/final return reason
-- `video_state` — watched, starred, hidden, and
+- `videos` — metadata, `metadata_source`/`metadata_observed_at`, Shorts retry
+  state, and pending/final return reason
+- `video_state` — channel association, watched, starred, hidden, and
   `highlight_acknowledged_at`; acknowledgement hides the active badge without
   clearing `videos.highlight_reason` history
 - `api_usage` — Pacific-day quota by bucket and endpoint
@@ -176,6 +197,7 @@ Core tables are:
   `smart_refresh_policy`
 - `videos_fts` — FTS5 when supported, with `LIKE` fallback
 
-The newest migrations add `app_settings`, return acknowledgement, its index,
-and orphan reader-state cleanup. Do not rewrite or renumber prior migrations.
+Migration 12 adds provenance/observation dates and reader-state channel association.
+Do not rerun migration 11's old orphan-state cleanup: expired videos now have
+intentional retained reader state. Do not rewrite or renumber prior migrations.
 Shorts remain stored for deduplication but are filtered from normal reads.

@@ -79,7 +79,7 @@ test("legacy DB migration preserves data and separates visible retention", (t) =
 
   const db = new Db(file);
   t.after(() => db.close());
-  assert.equal(db.db.pragma("user_version", { simple: true }), 11);
+  assert.equal(db.db.pragma("user_version", { simple: true }), 12);
   assert.deepEqual(
     db.db
       .prepare("SELECT video_id, short_status FROM videos ORDER BY video_id")
@@ -717,34 +717,19 @@ test("YouTube resolution and HTTP error mapping are actionable", async (t) => {
   t.mock.method(global, "fetch", async (url, options) => {
     request = { url: String(url), options };
     if (mode === "quota") {
-      return {
-        ok: false,
-        status: 403,
-        statusText: "Forbidden",
-        json: async () => ({
+      return Response.json({
           error: { errors: [{ reason: "quotaExceeded", message: "Quota exhausted" }] },
-        }),
-      };
+        }, { status: 403 });
     }
     if (mode === "empty") {
-      return { ok: true, status: 200, json: async () => ({ items: [] }) };
+      return Response.json({ items: [] });
     }
     if (mode === "malformed") {
-      return {
-        ok: true,
-        status: 200,
-        json: async () => {
-          throw new SyntaxError("Unexpected token");
-        },
-      };
+      return new Response("invalid json");
     }
-    return {
-      ok: true,
-      status: 200,
-      json: async () => ({
+    return Response.json({
         items: [{ id: CHANNEL_A, snippet: { title: "Exact" } }],
-      }),
-    };
+      });
   });
   const resolved = await youtube.resolveUrl("secret", "https://youtube.com/@exact");
   assert.equal(resolved.channelId, CHANNEL_A);
@@ -800,14 +785,10 @@ test("refresh reports visible videos separately from filtered Shorts", async (t)
   t.mock.method(global, "fetch", async (url) => {
     const value = String(url);
     if (value.includes("/playlistItems?")) {
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ items: [
-          { snippet: { channelId: CHANNEL_A, channelTitle: "Test", title: "Visible", publishedAt: "2026-01-01", resourceId: { videoId: "visible" }, thumbnails: {} } },
-          { snippet: { channelId: CHANNEL_A, channelTitle: "Test", title: "Short", publishedAt: "2026-01-02", resourceId: { videoId: "filtered" }, thumbnails: {} } },
-        ] }),
-      };
+      return Response.json({ items: [
+          { contentDetails: { videoPublishedAt: "2026-01-01" }, snippet: { channelId: CHANNEL_A, channelTitle: "Test", title: "Visible", resourceId: { videoId: "visible" }, thumbnails: {} } },
+          { contentDetails: { videoPublishedAt: "2026-01-02" }, snippet: { channelId: CHANNEL_A, channelTitle: "Test", title: "Short", resourceId: { videoId: "filtered" }, thumbnails: {} } },
+        ] });
     }
     return { status: value.endsWith("/filtered") ? 200 : 303 };
   });

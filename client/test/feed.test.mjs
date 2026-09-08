@@ -401,3 +401,131 @@ test("refresh report mentions RSS fallback only when channels used it", () => {
     " · 3 channels used RSS fallback",
   );
 });
+
+test("refresh completion reloads current navigation, not its original scope", async () => {
+  feed.clearChannelLists();
+  feed.activeFolder.set("original");
+  feed.activeChannelId.set(null);
+  const videoRequests = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (options.method === "POST") {
+      feed.activeFolder.set("current");
+      feed.activeChannelId.set("current-channel");
+      return new Response('{"type":"summary","errors":0}\n');
+    }
+    if (value.startsWith("/api/videos/returns")) return json({ count: 0, videoIds: [] });
+    if (value.startsWith("/api/videos")) { videoRequests.push(value); return json({ videos: [], hasMore: false }); }
+    if (value.startsWith("/api/status/quota")) return json({});
+    return json([]);
+  };
+  await feed.refreshFolder("original");
+  assert.equal(videoRequests.length, 1);
+  assert.match(videoRequests[0], /folder=current/);
+  assert.match(videoRequests[0], /channel=current-channel/);
+  feed.activeChannelId.set(null);
+});
+
+test("truncated refresh does not claim success; reconciliation is read-only and matches run id", async () => {
+  const calls = [];
+  let resolveStatus;
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), method: options.method || "GET" });
+    if (options.method === "POST") return new Response('{"type":"run","run_id":72}\n');
+    if (url === "/api/status/refresh") return new Promise(resolve => { resolveStatus = resolve; });
+    if (String(url).startsWith("/api/videos/returns")) return json({ count: 0, videoIds: [] });
+    if (String(url).startsWith("/api/videos")) return json({ videos: [], hasMore: false });
+    return json([]);
+  };
+  await assert.rejects(feed.refreshFolder("original"), /ended before completion/);
+  assert.equal(get(feed.refreshing), false);
+  assert.match(get(feed.refreshRecovery), /interrupted/);
+  resolveStatus(json({ running: false, recentRuns: [{ id: 73, status: "complete" }, { id: 72, status: "error", errors: 2 }] }));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.match(get(feed.refreshRecovery), /#72: error/);
+  assert.equal(calls.filter(call => call.method === "POST").length, 1);
+  assert.equal(get(feed.serverRefreshing), false);
+  const confirmed = get(feed.refreshRecovery);
+  globalThis.fetch = async () => json({ running: false, recentRuns: [] });
+  await feed.reconcileRefresh();
+  assert.equal(get(feed.refreshRecovery), confirmed, "later foreground checks preserve the known outcome");
+});
+
+test("foreground status observes running, unavailable, and idle without restarting a refresh", async () => {
+  const calls = [];
+  let state = "running";
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push(options.method || "GET");
+    if (url === "/api/status/refresh") {
+      if (state === "offline") throw new Error("offline");
+      return json({ running: state === "running", recentRuns: [] });
+    }
+    if (String(url).startsWith("/api/videos/returns")) return json({ count: 0, videoIds: [] });
+    if (String(url).startsWith("/api/videos")) return json({ videos: [], hasMore: false });
+    return json([]);
+  };
+  await feed.reconcileRefresh();
+  assert.equal(get(feed.serverRefreshing), true);
+  assert.match(get(feed.refreshRecovery), /still running/);
+  state = "offline";
+  await feed.reconcileRefresh();
+  assert.match(get(feed.refreshRecovery), /unavailable/);
+  state = "idle";
+  await feed.reconcileRefresh();
+  assert.equal(get(feed.serverRefreshing), false);
+  assert.match(get(feed.refreshRecovery), /could not be confirmed/);
+  assert.ok(calls.every(method => method === "GET"));
+});
+
+test("a stalled refresh body times out and clears its local busy state", async t => {
+  const timeout = globalThis.setTimeout;
+  t.mock.method(globalThis, "setTimeout", (callback, ms, ...args) => timeout(callback, ms === 45000 ? 20 : ms, ...args));
+  globalThis.fetch = async (url, options = {}) => {
+    if (options.method !== "POST") throw new Error("offline");
+    return new Response(new ReadableStream({
+      start(controller) {
+        options.signal.addEventListener("abort", () => controller.error(options.signal.reason), { once: true });
+      },
+    }));
+  };
+  await assert.rejects(feed.refreshFolder("original"), /timed out/);
+  assert.equal(get(feed.refreshing), false);
+  assert.equal(get(feed.refreshProgress).active, false);
+  await new Promise(resolve => timeout(resolve, 0));
+  assert.match(get(feed.refreshRecovery), /unavailable/);
+});
+
+test("ordinary request deadlines stay attached to the response body and retain caller cancellation", async t => {
+  const { fetchRequest } = await import("../src/stores/request.js");
+  const timeout = AbortSignal.timeout;
+  t.mock.method(AbortSignal, "timeout", ms => { assert.equal(ms, 30000); return timeout(20); });
+  let receivedSignal;
+  globalThis.fetch = async (_url, options) => {
+    receivedSignal = options.signal;
+    return new Response(new ReadableStream({ start(controller) {
+      options.signal.addEventListener("abort", () => controller.error(options.signal.reason), { once: true });
+    } }));
+  };
+  // timeout signals do not keep Node's event loop alive by themselves.
+  const keepAlive = setInterval(() => {}, 1000);
+  t.after(() => clearInterval(keepAlive));
+  const response = await fetchRequest("/api/folders");
+  await assert.rejects(response.json(), err => err.name === "TimeoutError");
+  assert.equal(receivedSignal.aborted, true);
+  const caller = new AbortController();
+  const second = await fetchRequest("/api/videos", { signal: caller.signal });
+  caller.abort();
+  await assert.rejects(second.json(), err => err.name === "AbortError");
+});
+
+test("long-running JSON mutations are not cut off by the ordinary read deadline or retried", async () => {
+  const { fetchRequest } = await import("../src/stores/request.js");
+  let calls = 0;
+  globalThis.fetch = async (_url, options) => {
+    calls++;
+    assert.equal(options.signal, undefined);
+    return json({ ok: true });
+  };
+  await fetchRequest("/api/channels/bulk/refresh", { method: "POST" });
+  assert.equal(calls, 1);
+});

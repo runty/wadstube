@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- Preserve live subscription state on failed restore; compensate failed orphan
+  cleanup and block mutations if file recovery also fails.
+- Bound complete YouTube API/RSS responses to ten seconds and 2 MiB; cancel
+  unused RSS retry bodies while preserving quota/fallback behavior.
+- Fix gold text contrast and watched-card readability; retain 44 px phone tap
+  targets and 16 px inputs across card densities and landscape layouts.
+- Resolve Unicode/encoded YouTube handles and supported channel-tab URLs.
+- Store actual video publication dates, correcting re-observed rows without
+  losing reader state; omit API entries without valid publication dates.
+- Add refresh heartbeats, a 45-second browser idle deadline, read-only
+  foreground reconciliation against server run IDs, and 30-second ordinary
+  API read deadlines. Refresh completion keeps the user's current feed selection.
+- Added migration 12 and 30-day live-video metadata expiry, with per-item RSS/API
+  provenance and observation dates. Expiry/count pruning preserve reader state;
+  explicit channel deletion still removes it. Legacy rows retain conservative
+  original age, and 304/Shorts probes never renew unseen metadata. Backups and
+  archives are unchanged; no blanket policy-compliance claim is made.
+
 ## 2.2 - 2026-07-19
 
 - Added a shared refresh preview/execution planner, persisted refresh-rule

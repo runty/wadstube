@@ -168,12 +168,12 @@
   .folder span, .channel span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   small { margin-left: auto; color: var(--text-muted); }
   .folder:hover, .channel:hover, .more:hover, .star:hover { background: var(--hover-bg); }
-  .folder.active, .channel.active { color: var(--accent); background: var(--active-bg); }
+  .folder.active, .channel.active { color: var(--accent-text); background: var(--active-bg); }
   .channels { padding-left: 22px; }
   .channel { color: var(--text-muted); font-size: .86rem; }
   .channel.unresolved { cursor: default; color: var(--text-muted); }
   .needs-resolution { color: var(--danger); font-size: .65rem; white-space: nowrap; }
-  .star.active { color: var(--accent); }
+  .star.active { color: var(--accent-text); }
   details.actions { position: relative; }
   summary { cursor: pointer; list-style: none; padding: 8px 10px; }
   .menu { position: absolute; right: 4px; top: 30px; z-index: 220; min-width: 150px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 7px; box-shadow: var(--shadow); padding: 4px; }

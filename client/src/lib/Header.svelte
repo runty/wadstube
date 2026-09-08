@@ -1,4 +1,5 @@
 <script>
+  import { serverRefreshing } from "../stores/feed.js";
   import { onMount } from "svelte";
   import { refreshing, error, sidebarOpen, searchQuery, toast, showHealth, showOperations, showRefreshPreview, quotaStatus, quotaStatusStale, loadQuotaStatus, resetAfterSubscriptionImport } from "../stores/feed.js";
   import { modalFocusFallback } from "../stores/modal.js";
@@ -172,7 +173,7 @@
         <span aria-hidden="true">☾</span>
       </button>
     </div>
-    <button class="refresh-btn" type="button" on:click={handleRefresh} disabled={$refreshing}
+    <button class="refresh-btn" type="button" on:click={handleRefresh} disabled={$refreshing || $serverRefreshing}
       aria-haspopup="dialog" aria-controls="refresh-preview">
       {#if $refreshing}
         <span class="spinner" aria-hidden="true"></span>

@@ -132,6 +132,7 @@
 </script>
 
 <div class="grid-wrapper">
+  <p class="retention-note">Video metadata expires after 30 days without re-observation. Saved watch/star state returns if a manual refresh finds the video again.</p>
   <div class="feed-toolbar" aria-label="Feed display options">
     <label>View
       <select bind:value={$viewFilter}>
@@ -196,13 +197,14 @@
 </div>
 
 <style>
+  .retention-note { color: var(--text-muted); font-size: .85rem; margin: 0 0 12px; }
   .grid-wrapper {
     padding: 16px 24px 24px;
   }
   .feed-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; color: var(--text-muted); font-size: .8rem; }
   .feed-toolbar label { display: inline-flex; align-items: center; gap: 6px; }
   .feed-toolbar select, .density button, .ack-all { color: var(--text); background: var(--button); border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px; }
-  .ack-all { color: var(--accent); cursor: pointer; }
+  .ack-all { color: var(--accent-text); cursor: pointer; }
   .density { display: inline-flex; margin-left: auto; }
   .density button { border-radius: 0; cursor: pointer; }
   .density button:first-child { border-radius: 7px 0 0 7px; }
