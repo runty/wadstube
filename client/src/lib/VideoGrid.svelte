@@ -1,5 +1,5 @@
 <script>
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import VideoCard from "./VideoCard.svelte";
   import {
     videos,
@@ -26,6 +26,16 @@
 
   const emptyImage = "/wads.png";
   const DEBOUNCE_MS = 250;
+
+  let phoneLayout = false;
+  $: effectiveDensity = phoneLayout && $density === "compact" ? "grid" : $density;
+  onMount(() => {
+    const query = window.matchMedia("(max-width: 640px)");
+    const update = () => { phoneLayout = query.matches; };
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  });
 
   let debounceTimer;
   let prevFolder;
@@ -156,10 +166,12 @@
       </select>
     <div class="density" role="group" aria-label="Video layout">
       {#each [["grid", "Grid", "M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z"], ["compact", "Compact grid", "M3 3h4v4H3z M10 3h4v4h-4z M17 3h4v4h-4z M3 10h4v4H3z M10 10h4v4h-4z M17 10h4v4h-4z M3 17h4v4H3z M10 17h4v4h-4z M17 17h4v4h-4z"], ["list", "List", "M3 4h5v5H3z M12 5h9 M12 8h6 M3 15h5v5H3z M12 16h9 M12 19h6"]] as option}
-        <button type="button" class:active={$density === option[0]} aria-pressed={$density === option[0]}
+        {#if option[0] !== "compact" || !phoneLayout}
+        <button type="button" class:active={effectiveDensity === option[0]} aria-pressed={effectiveDensity === option[0]}
           aria-label={option[1]} title={option[1]} on:click={() => density.set(option[0])}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d={option[2]} /></svg>
         </button>
+        {/if}
       {/each}
     </div>
     {#if $viewFilter === "returns" && $returnCount > 0}
@@ -184,7 +196,7 @@
       {/if}
     </div>
   {:else}
-    <div class="grid" class:compact={$density === "compact"} class:list={$density === "list"}>
+    <div class="grid" class:compact={effectiveDensity === "compact"} class:list={effectiveDensity === "list"}>
       {#each $videos as video (video.video_id)}
         <VideoCard {video} />
       {/each}
