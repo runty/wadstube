@@ -1,5 +1,24 @@
 # WadsTube review
 
+## Personal Chrome companion — prepared, not deployed
+
+Added a build-free personal Manifest V3 extension in `extension/`: click-time
+YouTube channel detection, nested-group search, direct-membership indicators,
+explicit saves and a compact gold light/dark interface. It stores only the last
+destination, never auto-refreshes, and requires only activeTab/scripting/storage
+plus the app's exact host. The companion backend adds explicit extension-origin
+allowlisting, optional direct-membership summary flags and bounded title hints.
+No dependency, state-format or database schema changes were required.
+
+Validation: 75 server tests, 40 client tests, client production build and clean
+audits. The real-extension worker/API fixture and existing five-viewport
+desktop/phone suite pass. Light/dark accessibility and the 600 px popup limit
+are checked; closing the popup preserves in-flight saves and changed video context
+is rejected. Tests use temporary data and loopback-pinned/intercepted networking.
+Manual Chrome toolbar invocation and real YouTube layout variants still require
+operator acceptance. See `extension/README.md` for installation, privacy and the
+exact server origin; this section is separate from the deployed status below.
+
 ## Current status — September 8, 2026
 
 **Required repairs are complete.** Fix-first items 1–7 and the subsequent

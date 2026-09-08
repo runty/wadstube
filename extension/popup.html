@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Save channel · WadsTube</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <svg class="symbols" aria-hidden="true"><defs>
+    <symbol id="folder-icon" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z"/></symbol>
+    <symbol id="arrow-icon" viewBox="0 0 24 24"><path d="M7 17 17 7M7 7h10v10"/></symbol>
+    <symbol id="check-icon" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  </defs></svg>
+  <header>
+    <div class="brand"><img src="icons/48.png" alt="" width="34" height="34"><div><h1>WadsTube</h1><span>Your channels, in their place.</span></div></div>
+    <a class="icon-button" id="open-app" href="https://wadstube.runty.org" target="_blank" rel="noopener" aria-label="Open WadsTube" title="Open WadsTube"><svg><use href="#arrow-icon"/></svg></a>
+  </header>
+  <main>
+    <section class="channel-card" aria-label="Current channel" id="channel-card" hidden>
+      <div class="eyebrow"><span class="youtube-mark">▶</span> FROM YOUR YOUTUBE TAB</div>
+      <div class="channel-identity"><div class="avatar" id="avatar"><span id="initial">W</span><img id="channel-avatar" alt="" hidden></div><div class="channel-copy"><h2 id="channel-name"></h2><p id="channel-handle"></p></div><span class="verified" title="Channel identified" id="identified"><svg><use href="#check-icon"/></svg></span></div>
+      <p class="video-title" id="video-title"></p>
+    </section>
+    <section id="loading" class="loading" role="status"><span class="spinner"></span><p>Finding your channel & groups…</p></section>
+    <section id="empty" class="empty" hidden>
+      <div class="empty-art"><svg><use href="#folder-icon"/></svg><span>+</span></div>
+      <h2>Discover. Keep. Come back.</h2>
+      <p>Open a YouTube video, then click WadsTube to save its channel to a group.</p>
+      <a class="secondary" href="https://www.youtube.com" target="_blank" rel="noopener">Open YouTube <svg><use href="#arrow-icon"/></svg></a>
+    </section>
+    <section id="picker" hidden>
+      <div class="section-heading"><h2>Choose a group</h2><span id="group-count"></span><button id="reload" class="icon-button" aria-label="Reload groups" title="Reload groups"><svg viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1"/></svg></button></div>
+      <label class="search"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input id="search" type="search" placeholder="Find a group…" aria-label="Find a group" autocomplete="off" spellcheck="false"><kbd>/</kbd></label>
+      <div id="groups" class="groups" role="radiogroup" aria-label="Destination group"></div>
+      <p id="no-groups" class="hint" hidden></p>
+      <p id="selection" class="selection" aria-live="polite">Choose where this channel belongs.</p>
+      <button id="save" class="primary" disabled><svg><use href="#folder-icon"/></svg><span>Add to group</span><span class="button-arrow" aria-hidden="true">→</span></button>
+      <p class="save-note" id="save-note">Adds the channel. Videos refresh when you choose.</p>
+    </section>
+    <section id="success" class="success" aria-live="polite" hidden>
+      <div class="success-mark"><svg><use href="#check-icon"/></svg></div>
+      <h2>Right where it belongs.</h2><p id="success-detail"></p>
+      <a id="open-group" class="primary" target="_blank" rel="noopener">Open group <svg><use href="#arrow-icon"/></svg></a>
+      <button id="another" class="text-button">Add to another group</button>
+    </section>
+    <section id="error" class="error" role="alert" hidden><h2>Let’s reconnect.</h2><p id="error-detail"></p><button id="retry" class="secondary">Try again</button></section>
+  </main>
+  <footer><span class="connection-dot" id="connection-dot"></span><span id="connection-label">Your private library</span><span class="footer-note">No tracking. Just saving.</span></footer>
+  <template id="group-template"><label class="group"><input type="radio" name="group"><span class="folder-tile"><svg><use href="#folder-icon"/></svg></span><span class="group-copy"><span class="group-name"></span><span class="group-parent"></span></span><span class="added-badge" hidden>Added <svg><use href="#check-icon"/></svg></span><span class="radio-mark"></span></label></template>
+  <script type="module" src="popup.mjs"></script>
+</body>
+</html>

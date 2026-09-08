@@ -52,7 +52,7 @@ module.exports = function (appState) {
     }
   }
 
-  function summary() {
+  function summary(channelId) {
     const unread = appState.db.getUnreadCounts();
     const unreadFor = (channelId) => Object.hasOwn(unread, channelId)
       ? Number(unread[channelId]) || 0
@@ -71,6 +71,8 @@ module.exports = function (appState) {
       collect(dataFolder);
       return {
         ...summaryFolder,
+        ...(channelId ? { containsChannel: dataFolder.channels.some((channel) =>
+          isResolvedChannel(channel) && channel.id === channelId) } : {}),
         unreadCount: [...uniqueChannelIds].reduce(
           (total, channelId) => total + unreadFor(channelId),
           0,
@@ -114,7 +116,11 @@ module.exports = function (appState) {
 
   // GET /api/folders
   router.get("/", (req, res) => {
-    res.json(summary());
+    const channelId = req.query.channelId;
+    if (channelId !== undefined && (typeof channelId !== "string" || !/^UC[A-Za-z0-9_-]{22}$/.test(channelId))) {
+      return res.status(400).json({ error: "Invalid YouTube channel ID" });
+    }
+    res.json(summary(channelId));
   });
 
   // POST /api/folders — create
@@ -203,6 +209,11 @@ module.exports = function (appState) {
 
       if (!channelName || channelName === "Unknown") {
         channelName = knownChannelTitle(channelId);
+      }
+      // The companion can supply the visible YouTube title without an API call.
+      // It is a bounded display hint, never allowed to replace a known title.
+      if (channelName === "Unknown" && typeof req.body.channelName === "string") {
+        channelName = req.body.channelName.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 200) || "Unknown";
       }
 
       const folderId = resolveFolderId(req.params.name, res);

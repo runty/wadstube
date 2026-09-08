@@ -10,6 +10,7 @@ maintainer's Shrimp instance is packaged natively by NixOS.
 
 ## Documentation
 
+- [Personal Chrome companion](extension/README.md) — save a YouTube channel to a group
 - [Quick start](#quick-start) — start a fresh Docker installation
 - [Usage](#usage) — feeds, refreshes, channel management, and operations
 - [Refresh modes and quota](#refresh-modes--quota) — RSS/API behavior and smart
@@ -1086,3 +1087,12 @@ flowchart LR
     root --> compose["docker-compose.yml<br/>Docker config with health check"]
     root --> env[".env<br/>Optional API key and settings; not committed"]
 ```
+
+## Personal Chrome companion
+
+The [WadsTube channel saver](extension/README.md) adds the channel from your
+current YouTube video to an existing group, with nested-group search, duplicate
+indicators and a compact light/dark popup. Load `extension/` as an unpacked
+extension; no Web Store publication is needed. It needs the companion server
+update and its exact extension origin in `ALLOWED_ORIGINS`. No automatic video
+refresh, browsing-history collection or new YouTube API key in the extension.

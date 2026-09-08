@@ -71,6 +71,8 @@ refreshes.
 - `client/src/lib/OperationsPanel.svelte` — rules, quota, system, and backups
 - `client/src/lib/ModalShell.svelte` — shared accessible modal behavior
 - `client/src/app.css` — gold theme, contrasting text accents, and responsive styling
+- `extension/` — build-free personal Manifest V3 Chrome channel saver; see its
+  README for exact-origin server setup, privacy, installation and testing
 
 ## Commands
 
@@ -103,6 +105,14 @@ cd client && npm run dev
 
 ## Constraints
 
+- The companion uses click-time `activeTab`, not persistent YouTube content
+  scripts. Keep its stable public manifest key, fixed app origin and exact
+  extension-origin allowlisting. No wildcard extension origins or arbitrary
+  message-to-fetch bridge. Saves must not trigger video refreshes.
+- Optional `GET /api/folders?channelId=…` membership flags mean direct membership,
+  not inherited membership. Channel-name hints are bounded display text and
+  must not replace a known/user-renamed title. Existing add operations remain
+  idempotent. Extension tests use temporary data and intercepted network only.
 - RSS refreshes use one small GET per channel and no Data API quota.
 - RSS exposes about 15 recent videos; retention fills over successive manual
   refreshes.

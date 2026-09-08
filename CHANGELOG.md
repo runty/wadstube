@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Personal Chrome companion (prepared, not deployed)
+
+- Add a build-free, unpacked Manifest V3 extension with a compact gold light/dark
+  popup, channel preview, searchable nested groups and existing-membership labels.
+- Save only on explicit confirmation; preserve in-flight saves when the popup
+  closes and reject stale video context. No background refresh or history access.
+- Allow explicitly configured Chrome extension origins, expose optional direct
+  folder membership flags and accept a bounded name hint for unknown channels.
+- Add real worker/API integration, duplicate/navigation safety, accessibility and
+  scoped-permission tests. Production activation and manual Chrome installation
+  are separate steps; no Web Store publication is needed.
+
 - Add home-screen install metadata, safe-area spacing and reduced-motion support.
 - Use native modal dialogs and keep closed sidebars out of keyboard navigation.
 - Offer native video sharing when available, retaining Copy link and YouTube links.

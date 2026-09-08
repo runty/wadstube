@@ -15,6 +15,11 @@ function normalizeOrigin(value) {
   if (!value) return null;
   try {
     const parsed = new URL(value);
+    // Unpacked companion extensions use a stable manifest key. Accept only an
+    // explicitly configured, exact extension origin, never a wildcard or "null".
+    if (/^chrome-extension:\/\/[a-p]{32}\/?$/.test(value)) {
+      return `chrome-extension://${parsed.hostname}`;
+    }
     if (!["http:", "https:"].includes(parsed.protocol)) return null;
     if (parsed.pathname !== "/" || parsed.search || parsed.hash) return null;
     return parsed.origin;
