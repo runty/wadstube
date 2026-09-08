@@ -63,16 +63,14 @@ repository. The old `~/wadstube-redeploy.sh` Docker workflow is obsolete.
 5. Before touching live state, confirm the host is `shrimp`, the checkout is
    clean, `wadstube.service` is active, and `/api/status/refresh` reports that no
    refresh is running. Capture `/api/status/system` database counts.
-6. Shrimp currently uses the dependency-pinned checkout below. Cherry-pick only
-   the reviewed app package commit, preserving its lockfile; do not pull current
-   main into it or switch from the ordinary checkout, which includes unrelated
-   dependency/service changes. Evaluate without switching:
+6. Shrimp has used its regular checkout since September 8, 2026. The historical
+   dependency-pinned rollout is no longer the deployment target. Inspect and
+   fast-forward the regular checkout, then evaluate without switching:
 
    ```bash
-   cd /home/phobus/nixstuff-wadstube-rollout
-   git fetch origin main
+   cd /home/phobus/nixstuff
    git status --short # stop if there are unexpected changes
-   git cherry-pick <reviewed-app-package-commit>
+   git pull --ff-only
    nix flake check --no-build
    ```
 
@@ -93,3 +91,16 @@ repository. The old `~/wadstube-redeploy.sh` Docker workflow is obsolete.
 
 The switch restarts only `wadstube.service` when WadsTube is the sole changed
 unit. It does not require a host reboot.
+
+## Personal Chrome companion
+
+Set `ALLOWED_ORIGINS` to include the exact origin
+`chrome-extension://mhjagbgfpcefdmidgmbmfkfoabephnbm`; preserve any other explicitly
+allowed origins. The Nix module owns this non-secret setting on Shrimp. Do not
+weaken the LAN/Tailscale ingress policy. The companion introduces no schema or
+state-format changes. Follow the same verified full-backup and restart-approval
+workflow as other releases, then test its OPTIONS preflight and read-only folder
+membership flags before the operator tests a real save.
+
+Chrome installation is separate: load this repository's `extension/` folder
+unpacked on the computer running Chrome. See `extension/README.md`.
