@@ -132,7 +132,6 @@
 </script>
 
 <div class="grid-wrapper">
-  <p class="retention-note">Video metadata expires after 30 days without re-observation. Saved watch/star state returns if a manual refresh finds the video again.</p>
   <div class="feed-toolbar" aria-label="Feed display options">
     <label>View
       <select bind:value={$viewFilter}>
@@ -197,7 +196,6 @@
 </div>
 
 <style>
-  .retention-note { color: var(--text-muted); font-size: .85rem; margin: 0 0 12px; }
   .grid-wrapper {
     padding: 16px 24px 24px;
   }
