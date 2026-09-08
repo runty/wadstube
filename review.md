@@ -15,7 +15,11 @@ Publication dates are corrected only when items are re-observed in an explicit
 refresh; no historical mass backfill was performed. Physical-phone/Safari
 verification remains outstanding.
 
-## Overnight follow-through — September 7–8, 2026 (not yet deployed)
+## Overnight follow-through — September 7–8, 2026 (deployed)
+
+Activated `bd4d8a5` on Shrimp at 07:25:02 PDT, September 8, from pinned
+checkout `a2c0fb2`. Health and HTTPS checks passed; subscriptions matched the
+verified backup, retaining 1,300 channels and 246 reader-state records.
 
 - Added install metadata using existing 192/512 px icons, without a service
   worker, automatic refresh or offline data caching. Added native Share where

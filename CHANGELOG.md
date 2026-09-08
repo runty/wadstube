@@ -7,7 +7,7 @@
 - Offer native video sharing when available, retaining Copy link and YouTube links.
 - Treat consent/login/unexpected Shorts redirects as unknown, not long-form.
 - Update compatible security-affected dependencies and add production-build
-  desktop/phone browser regression checks. These follow-ups are not deployed yet.
+  desktop/phone browser regression checks. Deployed on Shrimp September 8.
 
 - Preserve live subscription state on failed restore; compensate failed orphan
   cleanup and block mutations if file recovery also fails.
