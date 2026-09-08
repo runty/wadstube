@@ -102,5 +102,14 @@ state-format changes. Follow the same verified full-backup and restart-approval
 workflow as other releases, then test its OPTIONS preflight and read-only folder
 membership flags before the operator tests a real save.
 
-Chrome installation is separate: load this repository's `extension/` folder
-unpacked on the computer running Chrome. See `extension/README.md`.
+Shrimp is running application `a3facbd`, with hosted extension 1.0.1, as verified
+September 8, 2026. The title menu's **Chrome extension** entry provides the ZIP
+and installation/update instructions. Installing on another computer does not
+require restarting Shrimp. See `extension/README.md`.
+
+Client builds require `zip` and the sibling `extension/` sources; Docker and the
+native Nix module supply both. Keep the release-file allowlist in
+`client/vite.config.js` in sync when adding extension files. After deployment,
+verify `/downloads/wadstube-chrome-extension.zip` returns 200, application/zip and
+no-store, check archive integrity and manifest version, and confirm missing
+downloads return 404. The ZIP tracks the deployed release, not repository HEAD.

@@ -1,6 +1,6 @@
 # WadsTube review
 
-## Personal Chrome companion — prepared, not deployed
+## Personal Chrome companion — deployed September 8, 2026
 
 Added a build-free personal Manifest V3 extension in `extension/`: click-time
 YouTube channel detection, nested-group search, direct-membership indicators,
@@ -15,15 +15,25 @@ audits. The real-extension worker/API fixture and existing five-viewport
 desktop/phone suite pass. Light/dark accessibility and the 600 px popup limit
 are checked; closing the popup preserves in-flight saves and changed video context
 is rejected. Tests use temporary data and loopback-pinned/intercepted networking.
-Manual Chrome toolbar invocation and real YouTube layout variants still require
-operator acceptance. See `extension/README.md` for installation, privacy and the
-exact server origin; this section is separate from the deployed status below.
+The operator confirmed real Chrome use and the Nintendo Life membership fix.
+Extension 1.0.1 reads matching player responses when partial player data omits
+the channel ID; reopen regression coverage confirms existing groups stay marked
+Added. Other YouTube layout variants remain an ongoing compatibility check.
+
+Application `a3facbd` now hosts the extension ZIP in the title menu beside
+backup/import. Production HTTPS download, all 12 archive entries and manifest
+version were verified. Installation remains manual on each desktop; updates
+replace the same folder's files and require Chrome Reload, not Chrome Sync.
+See `extension/README.md` for installation, privacy and exact-origin setup.
 
 ## Current status — September 8, 2026
 
 **Required repairs are complete.** Fix-first items 1–7 and the subsequent
 toolbar, accessibility, sharing and install-manifest improvements are deployed.
-The running application code remains `bd4d8a5`.
+The running application code is `a3facbd` (hosted extension download), started
+at 12:57:19 PDT. Subscription folders exactly matched the verified pre-upgrade
+backup; 1,302 unique channels, 1,315 memberships and 247 reader-state records
+were preserved by count. WadsIPTV and Caddy were not restarted.
 
 Shrimp switched from the temporary pinned rollout to its regular
 `/home/phobus/nixstuff` configuration at `d69cc38`. Post-switch and post-reboot

@@ -6,11 +6,14 @@ are needed. This is a desktop Chrome extension, not an iPhone/Safari extension.
 
 ## Install
 
-On a deployed version with hosted downloads, open WadsTube's title menu (the same
+On Shrimp, open WadsTube's title menu (the same
 menu as Full backup and Import subscriptions), choose **Chrome extension**, and
 download the ZIP. Extract it into a permanent folder, then follow the steps below.
 For updates, replace the files in that same folder and reload in Chrome. The ZIP
 comes from the deployed app version; it does not automatically track GitHub main.
+Chrome Sync does not install or update this unpacked extension. Install it on
+each desktop separately; groups and memberships are shared through Wadstube,
+while the last selected destination is local to each browser.
 
 1. Keep this `extension/` folder somewhere permanent on the computer running
    Chrome. If using another computer, copy the entire folder including `icons/`.

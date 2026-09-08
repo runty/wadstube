@@ -1092,7 +1092,15 @@ flowchart LR
 
 The [WadsTube channel saver](extension/README.md) adds the channel from your
 current YouTube video to an existing group, with nested-group search, duplicate
-indicators and a compact light/dark popup. Load `extension/` as an unpacked
-extension; no Web Store publication is needed. It needs the companion server
-update and its exact extension origin in `ALLOWED_ORIGINS`. No automatic video
-refresh, browsing-history collection or new YouTube API key in the extension.
+indicators and a compact light/dark popup. On Shrimp, open the **WadsTube title
+menu → Chrome extension** (beside backup/import), download the ZIP, and extract
+it into a permanent folder. In desktop Chrome, open `chrome://extensions`, enable
+Developer mode, choose Load unpacked, and select the extracted folder.
+
+Repeat on each computer with Tailscale connected. Your groups and memberships
+come from Shrimp; Chrome Sync does not install or update the extension. For
+updates, replace the files in the same folder and click Reload in Chrome.
+The hosted ZIP follows the deployed app release, not GitHub main. No Web Store
+publication, automatic video refresh, browsing-history collection or browser API
+key is involved. Other deployments must configure the exact extension origin in
+`ALLOWED_ORIGINS`; this companion targets `https://wadstube.runty.org`.

@@ -6,7 +6,8 @@
 
 - Add Chrome extension to the title menu beside backup/import actions, with a
   downloadable ZIP and desktop installation/update instructions. Package only
-  release files at build time; downloads are not cached. Prepared for deployment.
+  release files at build time; downloads are not cached. Deployed and verified
+  on Shrimp September 8 as application `a3facbd`, hosting extension 1.0.1.
 
 - Extension 1.0.1: recover channel IDs from matching player responses when
   `getVideoData()` omits them, so reopening recognizes existing memberships.
