@@ -14,8 +14,10 @@
   const selector = "button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])";
   onMount(() => {
     returnFocus = document.activeElement;
+    dialog.showModal();
     queueMicrotask(() => closeButton?.focus());
     return () => {
+      dialog.close();
       const fallback = get(modalFocusFallback);
       const target = focusReturnTarget(returnFocus, fallback);
       target?.focus?.();
@@ -23,7 +25,7 @@
     };
   });
   function keydown(event) {
-    if (event.key === "Escape") { event.preventDefault(); onClose?.(); return; }
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose?.(); return; }
     if (event.key !== "Tab") return;
     const items = [...dialog.querySelectorAll(selector)]
       .filter((node) => node.getAttribute("aria-hidden") !== "true" && isUsableFocusTarget(node));
@@ -32,21 +34,27 @@
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   }
+  function backdropClick(event) {
+    if (event.target !== dialog) return;
+    const rect = dialog.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose?.();
+  }
 </script>
 
-<button class="modal-backdrop" type="button" aria-label={`Close ${title}`} on:click={() => onClose?.()}></button>
-<div {id} class:wide class="modal-shell" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}
-  tabindex="-1" bind:this={dialog} on:keydown={keydown}>
+<dialog {id} class:wide class="modal-shell" aria-labelledby={`${id}-title`}
+  bind:this={dialog} on:keydown={keydown} on:click={backdropClick} on:cancel|preventDefault={() => onClose?.()}>
   <header class="modal-header">
     <div><h2 id={`${id}-title`}>{title}</h2><slot name="subtitle" /></div>
     <button class="modal-close" type="button" bind:this={closeButton} on:click={() => onClose?.()} aria-label={`Close ${title}`}>×</button>
   </header>
   <div class="modal-body" class:fill={fillBody}><slot /></div>
   {#if $$slots.footer}<footer class="modal-footer"><slot name="footer" /></footer>{/if}
-</div>
+</dialog>
 
 <style>
-  .modal-backdrop { position: fixed; inset: 0; border: 0; background: var(--overlay); z-index: 250; }
+  .modal-shell::backdrop { background: var(--overlay); }
+  .modal-shell:not([open]) { display: none; }
+  .modal-shell { margin: 0; padding: 0; color: var(--text); }
   .modal-shell { position: fixed; z-index: 260; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(620px, 94vw); max-height: min(88vh, calc(100dvh - 24px)); display: flex; flex-direction: column; overflow: hidden; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
   .modal-shell.wide { width: min(1040px, 96vw); }
   .modal-header, .modal-footer { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }

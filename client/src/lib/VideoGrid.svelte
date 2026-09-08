@@ -214,7 +214,7 @@
 
 <style>
   .grid-wrapper {
-    padding: 16px 24px 24px;
+    padding: 16px max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
   }
   .feed-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); font-size: .85rem; }
   .feed-toolbar select, .favorite-filter, .ack-all { min-height: 40px; color: var(--text); background: var(--button); border: 1px solid var(--border); border-radius: 9px; padding: 7px 10px; }
@@ -254,7 +254,7 @@
       grid-template-columns: 1fr;
     }
     .grid-wrapper {
-      padding: 12px 12px 16px;
+      padding: 12px max(12px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
     }
   }
   .empty,

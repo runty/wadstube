@@ -2,8 +2,10 @@
 
 Date: September 7, 2026. Audience: maintainer of the trusted, single-user Shrimp deployment.
 
-Implementation update (September 7): **Fix first items 1–7 are implemented locally,
-not deployed. Item 7 uses the approved 30-day live-video-cache expiry policy.**
+Implementation update (September 7): **Fix first items 1–7 are deployed.
+Item 7 uses the approved 30-day live-video-cache expiry policy.**
+The repair release was activated as `e8897f5`; subsequent toolbar improvements
+are deployed as `4505dfc`. The removed on-screen retention notice stays removed.
 The findings below describe the reviewed revision, not the repaired checkout.
 See [README repair notes](README.md#review-repairs-unreleased) and
 [Unreleased changelog](CHANGELOG.md#unreleased) for changed behavior. Existing
@@ -12,6 +14,34 @@ and non-video data are not scrubbed, and blanket policy compliance is not claime
 Publication dates are corrected only when items are re-observed in an explicit
 refresh; no historical mass backfill was performed. Physical-phone/Safari
 verification remains outstanding.
+
+## Overnight follow-through — September 7–8, 2026 (not yet deployed)
+
+- Added install metadata using existing 192/512 px icons, without a service
+  worker, automatic refresh or offline data caching. Added native Share where
+  supported; Copy link and ordinary YouTube links remain available.
+- Converted shared modals to native modal dialogs (inert background and focus
+  return); closed sidebars are inert. Added safe-area padding and reduced-motion
+  handling without changing the approved compact toolbar or phone density choices.
+- Shorts redirects now establish long-form only for a same-video HTTPS YouTube
+  watch URL; consent, login, foreign and malformed redirects remain retryable
+  unknown. The 200-probe ceiling is unchanged: tuning it needs provider-rate
+  measurements during an explicitly requested refresh, not speculative changes.
+- Updated compatible body-parser/qs/PostCSS/nanoid dependencies; audits are clean.
+  Added checked-in production-build browser checks and sharing/redirect tests.
+  Chromium checks cover 1440×900, 390×844, 844×390, 320×568 and 720×450,
+  light/dark, available densities, search/state actions and modal keyboard access.
+  Final validation: 74 server tests, 35 client tests and the browser suite pass;
+  the production build passes. Screenshots were inspected; no production data
+  was used. Browser success is not a physical-keyboard/zoom certification.
+- Remaining: physical iPhone/Android keyboards, installed launch, clipboard/share
+  permissions and assistive technology; Firefox/WebKit runs; long-session DOM
+  profiling. Keep windowing conditional on measured problems. Node 24, wholesale
+  runes conversion, WebSub, statistics, embedded playback and AI features are
+  separate choices, not required repairs. Manual-only fetching remains deliberate.
+
+Original assessment and historical validation follow; their revision-specific
+findings are not claims that the same defects remain in the current source.
 
 Local repair validation before expiry: 65 server tests and 34 client tests passed, plus the
 production client build. Chromium/axe checked 24 combinations (1440×900,

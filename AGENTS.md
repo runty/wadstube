@@ -108,6 +108,8 @@ cd client && npm run dev
   refreshes.
 - Shorts detection is a free HEAD request. Classification is cached and
   transient `unknown` results use paced later retries.
+- Redirects classify long-form only for the same video's HTTPS YouTube watch
+  URL. Consent/login/foreign redirects remain unknown; never follow them here.
 - Handle/video URL additions use one quota unit; canonical channel IDs are
   free.
 - RSS fallback is restricted to exact structured quota/rate-limit codes.
@@ -163,6 +165,11 @@ cd client && npm run dev
 - Use CSS `var(--accent)` for accent fills; never use a low-contrast fill as small text.
 - Phone/coarse-pointer controls keep 44 px tap heights and 16 px input text;
   compact density must not shrink those hit areas. Dim watched thumbnails, not text.
+- Shared ModalShell uses showModal() for inert background behavior; preserve
+  focus return and keep closed sidebars inert. Reuse existing install icons;
+  do not add a service worker that caches API data or silently refreshes YouTube.
+- `client/browser/smoke.test.mjs` checks the production build against synthetic,
+  intercepted APIs; never point these tests at the production app.
 
 ## Data format
 

@@ -156,7 +156,7 @@ test("return upload is highlighted only after a prior stale refresh and run usag
       if (pass === 2) items.push({ snippet: { channelId: CHANNEL, channelTitle: "Returning", title: "Return", publishedAt: new Date().toISOString(), resourceId: { videoId: "return-video" }, thumbnails: {} } });
       return Response.json({ items: items.map(item => ({ ...item, contentDetails: { videoPublishedAt: item.snippet.publishedAt } })) });
     }
-    return { status: 303 };
+    return new Response(null, { status: 303, headers: { location: "/watch?v=" + value.split("/").at(-1) } });
   });
 
   let summary = await refreshChannels(db, [CHANNEL], {

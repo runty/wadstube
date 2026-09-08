@@ -4,14 +4,16 @@ WadsTube has two supported release paths: portable Docker Compose and the
 maintainer's native NixOS service on `shrimp`. Both preserve application state
 outside the immutable application build.
 
-## Unreleased migration 12: activation warning
+## Migration 12: first-upgrade and rollback warning
 
 This version expires live cached video metadata after 30 days without an actual
 RSS/API observation. Startup can delete many legacy rows, using their original
 storage dates conservatively. Reader state is retained; cards disappear until
 re-observed. Obtain a verified matching pre-upgrade `tube.json`/SQLite backup
 before activation. Do not run this checkout against production data merely to
-evaluate it. This work has only been tested with synthetic data.
+evaluate it. Migration 12 is already active on Shrimp (September 7, 2026);
+these warnings still apply to older standalone installations. The subsequent
+browser/Shorts maintenance release does not introduce another schema migration.
 
 An older schema-11 binary cannot open the upgraded schema-12 database. Rolling
 back code alone is not sufficient: use a controlled, approved offline restore
@@ -61,12 +63,16 @@ repository. The old `~/wadstube-redeploy.sh` Docker workflow is obsolete.
 5. Before touching live state, confirm the host is `shrimp`, the checkout is
    clean, `wadstube.service` is active, and `/api/status/refresh` reports that no
    refresh is running. Capture `/api/status/system` database counts.
-6. Fast-forward `/home/phobus/nixstuff` and evaluate without switching:
+6. Shrimp currently uses the dependency-pinned checkout below. Cherry-pick only
+   the reviewed app package commit, preserving its lockfile; do not pull current
+   main into it or switch from the ordinary checkout, which includes unrelated
+   dependency/service changes. Evaluate without switching:
 
    ```bash
-   cd /home/phobus/nixstuff
+   cd /home/phobus/nixstuff-wadstube-rollout
    git fetch origin main
-   git merge --ff-only origin/main
+   git status --short # stop if there are unexpected changes
+   git cherry-pick <reviewed-app-package-commit>
    nix flake check --no-build
    ```
 

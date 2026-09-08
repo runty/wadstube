@@ -1,6 +1,13 @@
 <script>
   import { setVideoState, acknowledgeReturnVideos, toast, error } from "../stores/feed.js";
+  import { shareVideo } from "./share.js";
   export let video;
+  const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+
+  async function shareLink() {
+    try { await shareVideo(video); }
+    catch (err) { error.set(err.message); }
+  }
 
   async function update(changes, message) {
     try {
@@ -61,6 +68,7 @@
         aria-pressed={video.starred}>{video.starred ? "★ Starred" : "☆ Star"}</button>
       <button on:click={() => update({ hidden: !video.hidden }, video.hidden ? "Restored video" : "Hidden")}>{video.hidden ? "Restore" : "Hide"}</button>
       <button on:click={copyLink}>Copy link</button>
+      {#if canShare}<button on:click={shareLink}>Share</button>{/if}
       {#if video.highlight_reason}<button class="ack" on:click={acknowledgeReturn}>Acknowledge return</button>{/if}
     </div>
   </div>

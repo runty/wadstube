@@ -7,6 +7,15 @@
 
   let adding = false;
   let newFolderName = "";
+  function closeSidebar() {
+    sidebarOpen.set(false);
+    document.querySelector('[aria-controls="subscription-folders"]')?.focus();
+  }
+  function escapeSidebar(event) {
+    if ($sidebarOpen && event.key === "Escape" && !event.defaultPrevented) {
+      event.preventDefault(); closeSidebar();
+    }
+  }
   function selectAll() {
     favoritesOnly.set(false);
     activeFolder.set("__all__");
@@ -22,8 +31,9 @@
   }
 </script>
 
-{#if $sidebarOpen}<button class="overlay" on:click={() => sidebarOpen.set(false)} aria-label="Close sidebar"></button>{/if}
-<aside class:open={$sidebarOpen} aria-label="Subscription folders">
+<svelte:window on:keydown={escapeSidebar} />
+{#if $sidebarOpen}<button class="overlay" on:click={closeSidebar} aria-label="Close sidebar"></button>{/if}
+<aside id="subscription-folders" class:open={$sidebarOpen} inert={!$sidebarOpen} aria-label="Subscription folders">
   <button class="root" class:active={$activeFolder === "__all__" && !$favoritesOnly} on:click={selectAll}>All videos</button>
   <button class="root" class:active={$favoritesOnly} on:click={() => { activeFolder.set("__all__"); activeChannelId.set(null); favoritesOnly.set(!$favoritesOnly); }}>
     <span aria-hidden="true">★</span> Favorite channels
@@ -49,6 +59,7 @@
 <style>
   aside { position: fixed; top: var(--header-height); left: 0; bottom: 0; width: 280px; background: color-mix(in srgb, var(--sidebar-bg) 96%, transparent); backdrop-filter: blur(18px); border-right: 1px solid var(--border); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; transform: translateX(-100%); transition: transform .2s; z-index: 150; padding: 10px 0; display: flex; flex-direction: column; }
   aside.open { transform: translateX(0); }
+  aside { top: calc(var(--header-height) + env(safe-area-inset-top)); padding-left: env(safe-area-inset-left); padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   .overlay { display: none; position: fixed; inset: 0; background: var(--overlay); z-index: 140; border: none; }
   .root { text-align: left; border: 0; background: transparent; color: var(--text); padding: 10px 16px; min-height: 42px; cursor: pointer; }
   .root:hover { background: var(--hover-bg); }

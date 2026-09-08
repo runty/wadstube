@@ -790,7 +790,7 @@ test("refresh reports visible videos separately from filtered Shorts", async (t)
           { contentDetails: { videoPublishedAt: "2026-01-02" }, snippet: { channelId: CHANNEL_A, channelTitle: "Test", title: "Short", resourceId: { videoId: "filtered" }, thumbnails: {} } },
         ] });
     }
-    return { status: value.endsWith("/filtered") ? 200 : 303 };
+    return new Response(null, { status: value.endsWith("/filtered") ? 200 : 303, headers: { location: "/watch?v=" + value.split("/").at(-1) } });
   });
   const summary = await refreshChannels(
     fakeDb,

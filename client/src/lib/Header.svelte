@@ -90,7 +90,8 @@
 <svelte:window on:click={closeGearMenu} />
 
 <header>
-  <button class="menu-btn" type="button" on:click={toggleSidebar} title="Toggle folders">
+  <button class="menu-btn" type="button" on:click={toggleSidebar} title="Toggle folders"
+    aria-label="Toggle folders" aria-controls="subscription-folders" aria-expanded={$sidebarOpen}>
     &#9776;
   </button>
   <div class="brand-wrapper">
@@ -202,7 +203,7 @@
     background: color-mix(in srgb, var(--card-bg) 92%, transparent);
     backdrop-filter: blur(18px);
     border-bottom: 1px solid var(--border);
-    padding: 12px 24px;
+    padding: calc(12px + env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 12px max(24px, env(safe-area-inset-left));
     display: flex;
     align-items: center;
     gap: 14px;
@@ -384,7 +385,7 @@
   }
   @media (max-width: 740px) {
     header {
-      padding: 10px 12px;
+      padding: calc(10px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left));
       gap: 8px;
       flex-wrap: wrap;
     }

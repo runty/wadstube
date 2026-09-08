@@ -101,7 +101,15 @@ async function checkIsShort(videoId, metrics = null) {
       { method: "HEAD", redirect: "manual" },
     );
     if (resp.status === 200) return "short";
-    if ([301, 302, 303, 307, 308].includes(resp.status)) return "long";
+    if ([301, 302, 303, 307, 308].includes(resp.status)) {
+      const location = resp.headers.get("location");
+      if (!location) return "unknown";
+      const target = new URL(location, "https://www.youtube.com");
+      // Consent/login/interstitial redirects do not establish video format.
+      if (target.protocol === "https:" && !target.username && !target.password &&
+          ["www.youtube.com", "youtube.com", "m.youtube.com"].includes(target.host) &&
+          target.pathname === "/watch" && target.searchParams.get("v") === videoId) return "long";
+    }
     return "unknown";
   } catch {
     return "unknown";

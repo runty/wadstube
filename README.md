@@ -18,6 +18,7 @@ maintainer's Shrimp instance is packaged natively by NixOS.
 - [Deployment guide](DEPLOYMENT.md) — Docker and the native Shrimp release path
 - [Changelog](CHANGELOG.md) — release history, including version 2.2
 - [Client development](client/README.md) — frontend development and validation
+- [Review](review.md) — dated findings, implementation status and remaining checks
 
 ## What's new in 2.2
 
@@ -714,6 +715,17 @@ The app runs at `http://localhost:3000`.
 4. Use search to filter by title, channel, or description.
 
 ### Phones and Tablets
+
+- Use your browser's install/Add to Home Screen action for a standalone launch.
+  The app still needs its normal network connection; nothing is cached offline
+  and installing it does not enable automatic YouTube fetching. Availability
+  varies by browser. [Browser install requirements](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Making_PWAs_installable).
+- Native **Share** appears when supported; **Copy link** and the YouTube links
+  remain available. Cancelling the share sheet is harmless; blocked sharing
+  gives a copy/open suggestion. [Web Share API](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/share).
+- Shared dialogs make the background inert and restore focus on dismissal;
+  a closed sidebar cannot receive keyboard focus. Reduced-motion preferences
+  and safe-area insets are respected. Physical-device checks remain necessary.
 
 - At phone widths up to 740 CSS pixels, the header uses two rows so search stays
   usable in portrait and landscape.

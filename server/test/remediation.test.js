@@ -59,7 +59,7 @@ test("refresh waits for every worker and records unexpected worker failures", as
   let siblingFinished = false;
   t.mock.method(global, "fetch", async (url) => {
     const value = String(url);
-    if (value.includes("/shorts/")) return { status: 303 };
+    if (value.includes("/shorts/")) return new Response(null, { status: 303, headers: { location: "/watch?v=" + value.split("/").at(-1) } });
     const isB = value.includes(`playlistId=UU${CHANNEL_B.slice(2)}`);
     if (isB) {
       await new Promise((resolve) => setTimeout(resolve, 25));
@@ -92,7 +92,7 @@ test("refresh callback and failure-recording errors cannot release workers early
   let siblingFinished = false;
   t.mock.method(global, "fetch", async (url) => {
     const value = String(url);
-    if (value.includes("/shorts/")) return { status: 303 };
+    if (value.includes("/shorts/")) return new Response(null, { status: 303, headers: { location: "/watch?v=" + value.split("/").at(-1) } });
     if (value.includes(`playlistId=UU${CHANNEL_B.slice(2)}`)) {
       await new Promise((resolve) => setTimeout(resolve, 25));
       siblingFinished = true;
@@ -129,7 +129,7 @@ test("existing unknown in feed obeys pacing and pending return highlight survive
   db.recordVideoClassification("pending", "unknown", new Date().toISOString());
   let probes = 0;
   t.mock.method(global, "fetch", async (url) => {
-    if (String(url).includes("/shorts/")) { probes++; return { status: 303 }; }
+    if (String(url).includes("/shorts/")) { probes++; return new Response(null, { status: 303, headers: { location: "/watch?v=" + String(url).split("/").at(-1) } }); }
     return apiResponse(CHANNEL_A, "pending");
   });
   const summary = await refreshChannels(db, [CHANNEL_A], { mode: "api", apiKey: "key" });

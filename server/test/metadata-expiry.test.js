@@ -115,7 +115,7 @@ test("API fallback records RSS provenance only for videos actually returned", as
   db.upsertVideos([row("unseen")], { source: "api", observedAt: CUTOFF });
   t.mock.method(global, "fetch", async url => {
     if (String(url).includes("playlistItems")) return Response.json({ error: { errors: [{ reason: "quotaExceeded" }] } }, { status: 403 });
-    if (String(url).includes("/shorts/")) return new Response(null, { status: 303 });
+    if (String(url).includes("/shorts/")) return new Response(null, { status: 303, headers: { location: "/watch?v=" + String(url).split("/").at(-1) } });
     return new Response(`<feed><title>Fixture</title><entry><videoId>seen</videoId><channelId>${CHANNEL}</channelId><title>Seen</title><published>2020-01-01T00:00:00Z</published></entry></feed>`);
   });
   await refreshChannels(db, [CHANNEL], { mode: "api", apiKey: "fake" });

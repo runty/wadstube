@@ -1,0 +1,15 @@
+{
+  "id": "/",
+  "name": "WadsTube",
+  "short_name": "WadsTube",
+  "description": "Your personal YouTube subscription reader",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f6ef",
+  "theme_color": "#e8a415",
+  "icons": [
+    { "src": "/android-chrome-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/android-chrome-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
