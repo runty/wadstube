@@ -55,4 +55,13 @@ test('YouTube detection rejects previous-video player and owner data during SPA 
   globalThis.location.href = 'https://www.youtube.com/watch?v=abcdefghijk';
   globalThis.window.ytInitialPlayerResponse.videoDetails = { videoId: 'abcdefghijk', channelId: 'UCaaaaaaaaaaaaaaaaaaaaaa', author: 'Initial response' };
   assert.equal(readYouTubeChannel().name, 'Initial response');
+  details = { video_id: 'abcdefghijk', author: 'Current player', title: 'Current' };
+  assert.equal(readYouTubeChannel().channelId, 'UCaaaaaaaaaaaaaaaaaaaaaa', 'partial player data must not hide the matching initial channel ID');
+  assert.equal(readYouTubeChannel().name, 'Current player');
+  globalThis.window.ytInitialPlayerResponse.videoDetails.videoId = 'oldoldoldol';
+  assert.equal(readYouTubeChannel().channelId, null, 'partial current data must not borrow a stale initial channel');
+  player.getPlayerResponse = () => ({ videoDetails: { videoId: 'abcdefghijk', channelId: 'UCaaaaaaaaaaaaaaaaaaaaaa' } });
+  assert.equal(readYouTubeChannel().channelId, 'UCaaaaaaaaaaaaaaaaaaaaaa', 'current player response supports SPA navigation');
+  player.getPlayerResponse = () => ({ videoDetails: { videoId: 'oldoldoldol', channelId: 'UCbbbbbbbbbbbbbbbbbbbbbb' } });
+  assert.equal(readYouTubeChannel().channelId, null, 'stale player responses must be rejected');
 });

@@ -2,7 +2,13 @@
 
 ## Unreleased
 
-### Personal Chrome companion (prepared, not deployed)
+### Personal Chrome companion
+
+- Extension 1.0.1: recover channel IDs from matching player responses when
+  `getVideoData()` omits them, so reopening recognizes existing memberships.
+  Reject responses for previous videos; add partial-player/reopen regressions.
+  Reload the unpacked extension to apply this fix; no server restart is needed.
+- Companion backend deployed and verified on Shrimp September 8.
 
 - Add a build-free, unpacked Manifest V3 extension with a compact gold light/dark
   popup, channel preview, searchable nested groups and existing-membership labels.

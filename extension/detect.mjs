@@ -10,8 +10,16 @@ export function readYouTubeChannel() {
   let details;
   try { details = player?.getVideoData?.(); } catch { /* Page APIs are optional. */ }
   if (details?.video_id !== videoId) details = null;
+  let response;
+  try { response = player?.getPlayerResponse?.()?.videoDetails; } catch { /* Page APIs are optional. */ }
   const initial = window.ytInitialPlayerResponse?.videoDetails;
-  if (!details && initial?.videoId === videoId) details = { channel_id: initial.channelId, author: initial.author, title: initial.title };
+  // getVideoData can identify the current video without providing channel_id.
+  // Fill missing fields from a response for this exact video, never stale SPA data.
+  for (const candidate of [response, initial]) {
+    if (candidate?.videoId !== videoId) continue;
+    details = { author: candidate.author, title: candidate.title,
+      ...details, channel_id: /^UC[A-Za-z0-9_-]{22}$/.test(details?.channel_id || '') ? details.channel_id : candidate.channelId };
+  }
   // Do not reuse a watch page's previous owner during YouTube SPA navigation.
   const rootMatches = shorts ? !!details : root?.getAttribute('video-id') === videoId;
   const owner = rootMatches ? root?.querySelector(shorts ? '#channel-name' : '#owner #channel-name') : null;

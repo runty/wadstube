@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "WadsTube — Save channel",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Save the YouTube channel you're watching to your WadsTube groups. Just your library, thoughtfully organized.",
   "minimum_chrome_version": "120",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtg/G7zMKbIiTcuVkUaWCRFnnQZ3i+7Mm2yepam5uPRnyvIxvwSQXga+LT+EVm5LAfGqnVuTSjko5XUVqdtfcUbfjaOWDGnkuApy4jnA5kF3w+1j1rNVmYCwwZztpv6B9lnKrdPlxhL7C1Jhm739nTVtBUrtfdD7dL4H/1QMhtMOg5hsJWEo5RvZg/j6BwfYVf1DMY1zddfSbRBfOh9zbl2Exq7i5L9lWBD/XDG1b1sZLgUt2kXa5sXOJ3+FKO60vB7HYtJH2oLp+KLSyCD7FVz+IdLjCcmY/wLjYxkft/ASCS5FHVnSMlrveTZj66a6TjDBcCIRu3Qoy7YHdMUFiPQIDAQAB",

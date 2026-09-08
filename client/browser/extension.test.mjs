@@ -48,7 +48,8 @@ test('loaded companion: real worker, folder API, save, duplicate and navigation 
     const request = route.request(), url = new URL(request.url());
     if (url.protocol === 'chrome-extension:') return route.continue();
     if (url.hostname === 'www.youtube.com') return route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><body><ytd-watch-flexy video-id="abcdefghijk"><div id="movie_player"></div></ytd-watch-flexy><script>
-      window.fixture = {video_id:'abcdefghijk', channel_id:'${ID}',author:'Veritasium',title:'The beautiful science hiding in everyday things'};
+      window.fixture = {video_id:'abcdefghijk',author:'Veritasium',title:'The beautiful science hiding in everyday things'};
+      window.ytInitialPlayerResponse = {videoDetails:{videoId:'abcdefghijk',channelId:'${ID}'}};
       document.querySelector('#movie_player').getVideoData = () => window.fixture;
       </script></body></html>` });
     if (url.hostname !== 'wadstube.runty.org' || !url.pathname.startsWith('/api/folders')) return route.abort();
@@ -108,6 +109,10 @@ test('loaded companion: real worker, folder API, save, duplicate and navigation 
   assert.equal(mutations.length, 1);
   await popup.close();
   await youtube.evaluate(() => history.pushState({}, '', '/watch?v=abcdefghijk'));
+  popup = await open();
+  await popup.waitForFunction(() => document.querySelector('input[value="space"]')?.disabled);
+  assert.match(await popup.locator('#channel-handle').innerText(), /In 2 groups already/);
+  await popup.close();
   // Worker owns the save; closing the popup must not cancel the user's action.
   let release;
   holdSave = new Promise(resolve => { release = resolve; });
