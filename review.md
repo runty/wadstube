@@ -1,5 +1,37 @@
 # WadsTube review
 
+## Current status — September 8, 2026
+
+**Required repairs are complete.** Fix-first items 1–7 and the subsequent
+toolbar, accessibility, sharing and install-manifest improvements are deployed.
+The running application code remains `bd4d8a5`.
+
+Shrimp switched from the temporary pinned rollout to its regular
+`/home/phobus/nixstuff` configuration at `d69cc38`. Post-switch and post-reboot
+checks passed: no failed system services, the HTTPS system-health endpoint
+responded successfully, and kernel 6.18.49 is running. The operator reported
+that the apps look good after the requested desktop/phone smoke check. This
+is an operator acceptance report, not a recorded pass for every device or feature.
+
+### Remaining work — optional, not release blockers
+
+- Browser scope is **Chrome and Safari only**, per the operator. Existing
+  automated coverage uses Chromium; Firefox coverage is not requested.
+- Detailed Safari/device checks (installed launch, software keyboard, sharing
+  permissions and assistive technology) have no individually recorded results.
+  WebKit automation could supplement, but cannot certify, physical Safari use.
+- Long-session feed memory/DOM profiling is optional; only optimize if measured
+  performance warrants it. No profiling or additional browser tests were run
+  for this documentation update.
+- Runtime/framework upgrades, automatic discovery and new playback/AI features
+  remain separate product decisions, not unfinished repairs.
+
+Use this section for current status and `DEPLOYMENT.md` plus the production
+runbook for operations. The dated findings and version tables below are retained
+as historical evidence, **not an open task list or a current dependency audit**.
+
+## Historical assessment and release records
+
 Date: September 7, 2026. Audience: maintainer of the trusted, single-user Shrimp deployment.
 
 Implementation update (September 7): **Fix first items 1–7 are deployed.
