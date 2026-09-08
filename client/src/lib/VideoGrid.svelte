@@ -132,37 +132,38 @@
 </script>
 
 <div class="grid-wrapper">
-  <div class="feed-toolbar" aria-label="Feed display options">
-    <label>View
-      <select bind:value={$viewFilter}>
+  <section class="feed-toolbar" aria-label="Feed display options">
+      <select class="view-select" aria-label="Show videos" bind:value={$viewFilter}>
         <option value="all">All visible</option>
         <option value="unread">Unread</option>
         <option value="starred">Starred videos</option>
         <option value="hidden">Hidden</option>
         <option value="returns">Returns ({$returnCount})</option>
       </select>
+    <label class="favorite-filter" class:active={$favoritesOnly} title="Only show videos from favorite channels">
+      <input type="checkbox" bind:checked={$favoritesOnly} />
+      <span>Favorite channels</span>
     </label>
+      <select class="sort-select" aria-label="Sort videos" bind:value={$sortOrder}>
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="favorite">Favorites first</option>
+        <option value="returning">Returns first</option>
+      </select>
+    <div class="density" role="group" aria-label="Video layout">
+      {#each [["grid", "Grid", "M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z"], ["compact", "Compact grid", "M3 3h4v4H3z M10 3h4v4h-4z M17 3h4v4h-4z M3 10h4v4H3z M10 10h4v4h-4z M17 10h4v4h-4z M3 17h4v4H3z M10 17h4v4h-4z M17 17h4v4h-4z"], ["list", "List", "M3 4h5v5H3z M12 5h9 M12 8h6 M3 15h5v5H3z M12 16h9 M12 19h6"]] as option}
+        <button type="button" class:active={$density === option[0]} aria-pressed={$density === option[0]}
+          aria-label={option[1]} title={option[1]} on:click={() => density.set(option[0])}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d={option[2]} /></svg>
+        </button>
+      {/each}
+    </div>
     {#if $viewFilter === "returns" && $returnCount > 0}
       <button class="ack-all" type="button" on:click={acknowledgeAll} disabled={acknowledgingAll}>
         {acknowledgingAll ? `Draining returns ${acknowledgementProgress}` : `Acknowledge returns (${$returnCount} now)`}
       </button>
     {/if}
-    <label class="check"><input type="checkbox" bind:checked={$favoritesOnly} /> Favorite channels</label>
-    <label>Sort
-      <select bind:value={$sortOrder}>
-        <option value="newest">Newest</option>
-        <option value="oldest">Oldest</option>
-        <option value="favorite">Favorites first</option>
-        <option value="returning">Returns first</option>
-      </select>
-    </label>
-    <div class="density" role="group" aria-label="Card density">
-      {#each [["grid", "Grid"], ["compact", "Compact"], ["list", "List"]] as option}
-        <button class:active={$density === option[0]} aria-pressed={$density === option[0]}
-          on:click={() => density.set(option[0])}>{option[1]}</button>
-      {/each}
-    </div>
-  </div>
+  </section>
   {#if $refreshing}
     <div class="loading">Refreshing...</div>
   {/if}
@@ -199,15 +200,33 @@
   .grid-wrapper {
     padding: 16px 24px 24px;
   }
-  .feed-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; color: var(--text-muted); font-size: .8rem; }
-  .feed-toolbar label { display: inline-flex; align-items: center; gap: 6px; }
-  .feed-toolbar select, .density button, .ack-all { color: var(--text); background: var(--button); border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px; }
-  .ack-all { color: var(--accent-text); cursor: pointer; }
-  .density { display: inline-flex; margin-left: auto; }
-  .density button { border-radius: 0; cursor: pointer; }
-  .density button:first-child { border-radius: 7px 0 0 7px; }
-  .density button:last-child { border-radius: 0 7px 7px 0; }
-  .density button.active { color: var(--ink); background: var(--accent); }
+  .feed-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); font-size: .85rem; }
+  .feed-toolbar select, .favorite-filter, .ack-all { min-height: 40px; color: var(--text); background: var(--button); border: 1px solid var(--border); border-radius: 9px; padding: 7px 10px; }
+  .feed-toolbar select { cursor: pointer; max-width: 100%; }
+  .favorite-filter { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+  .favorite-filter input { margin: 0; width: 16px; height: 16px; accent-color: var(--accent-text); flex-shrink: 0; }
+  .favorite-filter.active { border-color: var(--accent-text); color: var(--accent-text); }
+  .sort-select { margin-left: auto; }
+  .density { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--bg-soft); border: 1px solid var(--border); }
+  .density button { display: grid; place-items: center; min-width: 34px; min-height: 32px; padding: 0; border: 1px solid transparent; border-radius: 6px; color: var(--text-muted); background: transparent; cursor: pointer; }
+  .density button:hover { color: var(--text); background: var(--button); }
+  .density button.active { color: var(--accent-text); background: var(--button); border-color: var(--accent-text); }
+  .ack-all { flex-basis: 100%; color: var(--accent-text); cursor: pointer; text-align: left; }
+  .ack-all:disabled { opacity: .65; cursor: wait; }
+  @media (max-width: 640px), (pointer: coarse) {
+    .feed-toolbar select, .favorite-filter, .ack-all { min-height: 44px; }
+    .feed-toolbar select { font-size: 16px; }
+    .density button { min-width: 44px; min-height: 44px; }
+  }
+  @media (max-width: 640px) {
+    .feed-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+    .feed-toolbar select { width: 100%; min-width: 0; padding-left: 8px; padding-right: 2px; }
+    .favorite-filter { min-width: 0; padding: 7px 8px; font-size: .8rem; line-height: 1.2; }
+    .sort-select { margin-left: 0; }
+    .density { justify-content: space-between; padding: 0; }
+    .density button { flex: 1; min-width: 0; }
+    .ack-all { grid-column: 1 / -1; }
+  }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -222,7 +241,6 @@
     .grid-wrapper {
       padding: 12px 12px 16px;
     }
-    .density { margin-left: 0; }
   }
   .empty,
   .loading {
