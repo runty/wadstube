@@ -5,7 +5,7 @@ function mountFrontend(app, clientDist) {
   app.use(express.static(clientDist, {
     setHeaders(res, filePath) {
       const relative = path.relative(clientDist, filePath);
-      if (relative === "index.html") {
+      if (relative === "index.html" || relative.split(path.sep)[0] === "downloads") {
         res.setHeader("Cache-Control", "no-store");
       } else if (relative.split(path.sep)[0] === "assets") {
         res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
@@ -17,6 +17,9 @@ function mountFrontend(app, clientDist) {
   // asset URL: browsers reject that HTML as a module and leave the SPA blank.
   app.use("/assets", (_req, res) => {
     res.status(404).type("text/plain").send("Asset not found");
+  });
+  app.use("/downloads", (_req, res) => {
+    res.status(404).type("text/plain").send("Download not found");
   });
 
   app.get("/{*splat}", (_req, res) => {

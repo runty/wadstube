@@ -1,9 +1,11 @@
 # Stage 1: Build Svelte frontend
 FROM node:22-alpine AS client-build
+RUN apk add --no-cache zip
 WORKDIR /app/client
 COPY client/package*.json ./
 RUN npm ci
 COPY client/ ./
+COPY extension/ /app/extension/
 RUN npm run build
 
 # Stage 2: Server runtime

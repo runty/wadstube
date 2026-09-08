@@ -4,6 +4,10 @@
 
 ### Personal Chrome companion
 
+- Add Chrome extension to the title menu beside backup/import actions, with a
+  downloadable ZIP and desktop installation/update instructions. Package only
+  release files at build time; downloads are not cached. Prepared for deployment.
+
 - Extension 1.0.1: recover channel IDs from matching player responses when
   `getVideoData()` omits them, so reopening recognizes existing memberships.
   Reject responses for previous videos; add partial-player/reopen regressions.

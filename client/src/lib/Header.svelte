@@ -4,10 +4,12 @@
   import { refreshing, error, sidebarOpen, searchQuery, toast, showHealth, showOperations, showRefreshPreview, quotaStatus, quotaStatusStale, loadQuotaStatus, resetAfterSubscriptionImport } from "../stores/feed.js";
   import { modalFocusFallback } from "../stores/modal.js";
   import { setThemeMode, themeMode } from "../stores/theme.js";
+  import ModalShell from "./ModalShell.svelte";
 
   let fileInput;
   let showGearMenu = false;
   let brandButton;
+  let showExtension = false;
 
   onMount(() => {
     loadQuotaStatus().catch(() => {});
@@ -116,6 +118,9 @@
         <button type="button" on:keydown={handleSettingsKeydown} on:click={handleBackup}>&#8615; Export subscriptions</button>
         <button type="button" on:keydown={handleSettingsKeydown} on:click={handleFullBackup}>&#8615; Full backup</button>
         <button type="button" on:keydown={handleSettingsKeydown} on:click={handleRestoreClick}>&#8613; Import subscriptions</button>
+        <button type="button" on:keydown={handleSettingsKeydown} on:click={() => {
+          modalFocusFallback.set(brandButton); showGearMenu = false; showExtension = true;
+        }}>Chrome extension</button>
       </div>
     {/if}
   </div>
@@ -187,6 +192,21 @@
   </div>
 </header>
 
+{#if showExtension}
+  <ModalShell id="chrome-extension" title="Chrome extension" onClose={() => showExtension = false}>
+    <p class="extension-intro">Save the channel you’re watching on YouTube straight to your WadsTube groups.</p>
+    <a class="extension-download" href="/downloads/wadstube-chrome-extension.zip" download>Download Chrome extension</a>
+    <ol class="extension-steps">
+      <li>Extract the ZIP into a permanent folder on your computer.</li>
+      <li>Open <code>chrome://extensions</code> in desktop Chrome and enable <strong>Developer mode</strong>.</li>
+      <li>Choose <strong>Load unpacked</strong> and select the extracted folder containing <code>manifest.json</code>.</li>
+      <li>Pin <strong>WadsTube — Save channel</strong>, connect to Tailscale, and open a YouTube video.</li>
+    </ol>
+    <p class="extension-note">Already installed? Replace the files in the same folder with this download, then click Reload on Chrome’s extensions page. Chrome Sync does not install or update this extension.</p>
+    <p class="extension-note">For desktop Chrome, not phone browsers. Your groups and saved memberships are shared through WadsTube.</p>
+  </ModalShell>
+{/if}
+
 {#if $error && String($error).trim()}
   <div class="error-bar" role="alert" aria-live="assertive">
     <span>{$error}</span>
@@ -195,6 +215,11 @@
 {/if}
 
 <style>
+  .extension-intro { margin-top: 0; }
+  .extension-download { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 16px; border-radius: 8px; background: var(--accent); color: #201600; font-weight: 700; text-decoration: none; }
+  .extension-steps { padding-left: 22px; line-height: 1.6; }
+  .extension-steps li + li { margin-top: 8px; }
+  .extension-note { color: var(--text-muted); font-size: .875rem; line-height: 1.5; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
   header {
     position: sticky;

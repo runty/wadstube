@@ -34,6 +34,8 @@ function folder(id, name, channels = [], children = []) {
 test("frontend caching cannot turn a stale bundle into a blank SPA", async (t) => {
   const clientDist = tempDir(t);
   fs.mkdirSync(path.join(clientDist, "assets"));
+  fs.mkdirSync(path.join(clientDist, "downloads"));
+  fs.writeFileSync(path.join(clientDist, "downloads", "wadstube-chrome-extension.zip"), "PK fixture");
   fs.writeFileSync(path.join(clientDist, "index.html"), "<!doctype html><div id=\"app\"></div>");
   fs.writeFileSync(path.join(clientDist, "assets", "index-current.js"), "globalThis.appLoaded = true;");
 
@@ -62,6 +64,14 @@ test("frontend caching cannot turn a stale bundle into a blank SPA", async (t) =
   assert.equal(response.status, 404);
   assert.match(response.headers.get("content-type"), /^text\/plain/);
   assert.equal(await response.text(), "Asset not found");
+  response = await fetch(`${base}/downloads/wadstube-chrome-extension.zip`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.match(response.headers.get("content-type"), /^application\/zip/);
+  assert.equal(await response.text(), "PK fixture");
+  response = await fetch(`${base}/downloads/missing.zip`);
+  assert.equal(response.status, 404);
+  assert.equal(await response.text(), "Download not found");
 });
 
 test("legacy DB migration preserves data and separates visible retention", (t) => {
