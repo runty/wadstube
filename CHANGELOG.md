@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Close the group's three-dot menu when opening Manage channels, and return
+  focus to the menu button when the manager closes.
+
 - Refresh every eligible channel on each explicit refresh, without cooldowns
   or failure backoff. Add persistent group Mute/Unmute menu actions and a mute
   indicator; parent muting includes nested groups. Shared channels refresh

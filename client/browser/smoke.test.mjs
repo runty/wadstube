@@ -25,12 +25,23 @@ test("desktop/phone reader, native dialogs, sharing and install metadata", { tim
     const groups = [{ id: "fixture", name: "Fixture folder", channelCount: 1, muted: false, refreshMuted: false,
       children: [{ id: "nested", name: "Nested folder", channelCount: 1, muted: false, refreshMuted: false, children: [] }] }];
     const muteRequests = [];
+    const channels = [{ id: "UCaaaaaaaaaaaaaaaaaaaaaa", name: "Fixture channel" }];
+    const addRequests = [];
     await page.route("**/*", async route => {
       const url = new URL(route.request().url());
       if (url.origin !== origin) return route.abort();
       if (!url.pathname.startsWith("/api/")) return route.continue();
       let data = [];
       if (url.pathname === "/api/folders") data = groups;
+      if (url.pathname === "/api/folders/fixture/channels") {
+        if (route.request().method() === "POST") {
+          const { channelId } = route.request().postDataJSON();
+          addRequests.push(channelId);
+          channels.push({ id: channelId, name: "Added channel" });
+          groups[0].channelCount = channels.length;
+          data = { ok: true, folders: groups, channelName: "Added channel" };
+        } else data = channels;
+      }
       if (url.pathname === "/api/folders/fixture/mute") {
         assert.equal(route.request().method(), "PATCH");
         const { muted } = route.request().postDataJSON();
@@ -108,6 +119,19 @@ test("desktop/phone reader, native dialogs, sharing and install metadata", { tim
     await folderMenu.getByRole("button", { name: "Unmute", exact: true }).click();
     await page.waitForFunction(() => !document.querySelector(".mute-icon"));
     assert.deepEqual(muteRequests, [true, false]);
+    await folderMenu.locator("summary").click();
+    await folderMenu.getByRole("button", { name: "Manage channels", exact: true }).click();
+    const manager = page.getByRole("dialog", { name: "Fixture folder", exact: true });
+    await manager.waitFor();
+    assert.equal(await folderMenu.evaluate(el => el.open), false, "group menu closes when opening the manager");
+    await manager.getByRole("textbox", { name: "YouTube channel URL or channel ID", exact: true }).fill("UCbbbbbbbbbbbbbbbbbbbbbb");
+    await manager.getByRole("button", { name: "+ Add", exact: true }).click();
+    await manager.getByRole("link", { name: "Added channel", exact: true }).waitFor();
+    await manager.getByRole("button", { name: "Close Fixture folder", exact: true }).click();
+    await manager.waitFor({ state: "hidden" });
+    assert.equal(await folderMenu.evaluate(el => el.open), false, "group menu stays closed after adding a channel");
+    assert(await folderMenu.locator("summary").evaluate(el => document.activeElement === el), "focus returns to the group menu button");
+    assert.deepEqual(addRequests, ["UCbbbbbbbbbbbbbbbbbbbbbb"]);
     if (width < 900) await page.getByRole("button", { name: "Toggle folders", exact: true }).click();
     const settings = page.getByTitle("Settings", { exact: true });
     await settings.click();

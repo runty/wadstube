@@ -54,6 +54,12 @@
     if (!name || name === folder.name) return;
     try { await renameFolderApi(folder.id, name); } catch (err) { error.set(err.message); }
   }
+  function manageChannels(event) {
+    const menu = event.currentTarget.closest("details");
+    menu.open = false;
+    menu.querySelector("summary")?.focus();
+    showChannelsFor.set(folder.id);
+  }
   async function toggleMute(event) {
     const menu = event.currentTarget.closest("details");
     const nextMuted = !folder.muted;
@@ -133,7 +139,7 @@
     <details class="actions" use:escapeDetails>
       <summary class="more" aria-label={`Actions for ${folder.name}`}>•••</summary>
       <div class="menu">
-        <button on:click={() => showChannelsFor.set(folder.id)}>Manage channels</button>
+        <button on:click={manageChannels}>Manage channels</button>
         <button on:click={toggleMute} disabled={muting}>{muting ? "Saving…" : folder.muted ? "Unmute" : "Mute"}</button>
         {#if folder.refreshMuted && !folder.muted}<p>Refresh muted by a parent group.</p>{/if}
         <button on:click={renameFolder}>Rename folder</button>
