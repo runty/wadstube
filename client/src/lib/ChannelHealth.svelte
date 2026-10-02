@@ -57,7 +57,7 @@
   function refreshSelected() {
     const ids = [...selected];
     return act(ids, bulkRefresh, (result) => ({
-      message: `${result.summary.checked || 0} checked · ${result.summary.errors || 0} errors · ${result.summary.api_units || 0} API units · ${result.summary.daily_remaining ?? "?"} left`,
+      message: `${result.summary.checked || 0} checked · ${result.summary.skipped || 0} muted · ${result.summary.errors || 0} errors · ${result.summary.api_units || 0} API units · ${result.summary.daily_remaining ?? "?"} left`,
       type: result.summary.errors ? "warning" : "success",
     }));
   }
@@ -82,14 +82,7 @@
     if (!value) return "Never"; const days = Math.floor((Date.now() - new Date(value).getTime()) / 86400000);
     return days < 1 ? "Today" : `${days}d ago`;
   }
-  function until(value) {
-    if (!value) return "unknown";
-    const minutes = Math.ceil((new Date(value).getTime() - Date.now()) / 60000);
-    if (minutes <= 0) return "now";
-    if (minutes < 60) return `in ${minutes}m`;
-    if (minutes < 1440) return `in ${Math.ceil(minutes / 60)}h`;
-    return `in ${Math.ceil(minutes / 1440)}d`;
-  }
+
 </script>
 
 <ModalShell id="channel-health" title="Channel health" onClose={close} wide>
@@ -97,9 +90,9 @@
   <div class="filters">
     <label>Search<input type="search" bind:value={search} placeholder="Channel title or ID" disabled={busy} /></label>
     <label>Status<select bind:value={status} disabled={busy}><option value="all">All</option><option value="error">Errors</option><option value="ok">OK / unchanged</option></select></label>
-    <label>Schedule<select bind:value={due} disabled={busy}><option value="all">All</option><option value="due">Due now</option><option value="later">Due later</option></select></label>
+    <label>Refresh<select bind:value={due} disabled={busy}><option value="all">All</option><option value="due">Ready</option><option value="later">Muted</option></select></label>
     <label>Upload inactivity<select bind:value={inactivity} disabled={busy}><option value="all">All</option><option value="none">No history</option><option value="lt90">Under 90 days</option><option value="90to364">90–364 days</option><option value="365plus">365+ days</option></select></label>
-    <label>Sort<select bind:value={sort} disabled={busy}><option value="title">Title</option><option value="success">Last success</option><option value="upload">Last upload</option><option value="nextDue">Next due</option><option value="status">Status</option></select></label>
+    <label>Sort<select bind:value={sort} disabled={busy}><option value="title">Title</option><option value="success">Last success</option><option value="upload">Last upload</option><option value="nextDue">Refresh eligibility</option><option value="status">Status</option></select></label>
   </div>
   <div class="selection" aria-live="polite">
     <button type="button" on:click={selectVisible} disabled={busy}>{visible.length && visible.every((row) => selected.has(row.id)) ? "Clear visible" : "Select visible"}</button>
@@ -126,7 +119,7 @@
         <input type="checkbox" checked={selected.has(channel.id)} on:change={() => toggle(channel.id)} aria-label={`Select ${channel.title}`} disabled={busy || (!selected.has(channel.id) && selected.size >= MAX_BULK_CHANNELS)} />
         <div><h3>{channel.favorite ? "★ " : ""}{channel.title}</h3>
           <p>{channel.folderIds?.map((id) => folderNames.get(id) || id).join(", ") || "No folder membership"}</p>
-          <p>{channel.last_refresh_status || "Never refreshed"} · Success {age(channel.last_refreshed_at)} · Upload {age(channel.latest_upload_at)} · {channel.smart_refresh?.due ? "Due now" : `Next ${until(channel.smart_refresh?.nextDueAt)}`}</p>
+          <p>{channel.last_refresh_status || "Never refreshed"} · Success {age(channel.last_refreshed_at)} · Upload {age(channel.latest_upload_at)} · {channel.smart_refresh?.due ? "Ready to refresh" : "Refresh muted"}</p>
           {#if channel.last_error}<p class="danger-text">{channel.last_error}</p>{/if}
         </div>
       </article>

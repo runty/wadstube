@@ -103,6 +103,7 @@ function normalizeFolders(input, depth, state, location) {
     out.push({
       id,
       name,
+      ...(raw.muted === true ? { muted: true } : {}),
       channels,
       children: normalizeFolders(
         raw.children,
@@ -302,18 +303,48 @@ function getChannelsForFolder(data, folderName) {
   return collectAllChannelIds(folder);
 }
 
+// Refresh membership follows the entire path, including ancestors outside a
+// selected folder. A channel can still refresh through another unmuted path.
+function refreshMemberships(data, folderId = null) {
+  const memberships = [];
+  let found = folderId === null;
+  function walk(folders, ancestorMuted = false, inScope = folderId === null) {
+    for (const folder of folders || []) {
+      const selected = inScope || folder.id === folderId;
+      if (folder.id === folderId) found = true;
+      const muted = ancestorMuted || folder.muted === true;
+      if (selected) {
+        for (const channel of folder.channels || []) memberships.push({ channel, muted });
+      }
+      walk(folder.children, muted, selected);
+    }
+  }
+  walk(data.folders);
+  if (!found) throw new Error(`Folder "${folderId}" not found`);
+  return memberships;
+}
+
+function refreshableChannelIds(data, folderId = null) {
+  return new Set(refreshMemberships(data, folderId)
+    .filter(({ channel, muted }) => !muted && isResolvedChannel(channel))
+    .map(({ channel }) => channel.id));
+}
+
 function getFolderTreeSummary(data) {
-  function summarize(folder) {
+  function summarize(folder, ancestorMuted = false) {
     const channels = collectAllChannels(folder);
+    const refreshMuted = ancestorMuted || folder.muted === true;
     return {
       id: folder.id,
       name: folder.name,
+      muted: folder.muted === true,
+      refreshMuted,
       channelCount: channels.length,
       unresolvedCount: channels.filter((channel) => !isResolvedChannel(channel)).length,
-      children: (folder.children || []).map(summarize),
+      children: (folder.children || []).map((child) => summarize(child, refreshMuted)),
     };
   }
-  return data.folders.map(summarize);
+  return data.folders.map((folder) => summarize(folder));
 }
 
 // --- Mutation functions ---
@@ -594,6 +625,8 @@ function allReferencedChannelIds(data) {
 }
 
 module.exports = {
+  refreshMemberships,
+  refreshableChannelIds,
   loadData,
   saveData,
   findFolder,

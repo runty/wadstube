@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Refresh every eligible channel on each explicit refresh, without cooldowns
+  or failure backoff. Add persistent group Mute/Unmute menu actions and a mute
+  indicator; parent muting includes nested groups. Shared channels refresh
+  through unmuted memberships. Preview, bulk/single retry, quota snapshots, and
+  pending Shorts retries respect muting. Operations retains return-highlight
+  settings and removes timing controls.
+
 ### Personal Chrome companion
 
 - Add Chrome extension to the title menu beside backup/import actions, with a

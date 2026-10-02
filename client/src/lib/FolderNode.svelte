@@ -3,6 +3,7 @@
     activeFolder, activeChannelId, sidebarOpen, folders, channelLists, loadChannels,
     renameFolderApi, deleteFolderApi, renameChannelApi, removeChannelFromFolder,
     moveChannelApi, addChannelToFolder, setChannelFavorite, showChannelsFor, error, toast,
+    setFolderMuted,
   } from "../stores/feed.js";
   import {
     canUseAsFeedFilter, isUnresolvedChannel,
@@ -14,6 +15,7 @@
   let openFolders = false;
   let openChannels = false;
   let loading = false;
+  let muting = false;
   let dragOver = false;
   let moveDestinations = new Map();
   $: channels = ownValue($channelLists, folder.id, []);
@@ -51,6 +53,18 @@
     const name = prompt("Rename folder", folder.name)?.trim();
     if (!name || name === folder.name) return;
     try { await renameFolderApi(folder.id, name); } catch (err) { error.set(err.message); }
+  }
+  async function toggleMute(event) {
+    const menu = event.currentTarget.closest("details");
+    const nextMuted = !folder.muted;
+    muting = true;
+    try {
+      await setFolderMuted(folder.id, nextMuted);
+      menu.open = false;
+      menu.querySelector("summary")?.focus();
+      toast.set({ message: `${folder.name} ${nextMuted ? "muted" : "unmuted"}`, type: "info" });
+    } catch (err) { error.set(err.message); }
+    finally { muting = false; }
   }
   async function deleteFolder() {
     if (!confirm(`Delete folder “${folder.name}” and its nested folders?`)) return;
@@ -106,13 +120,22 @@
     on:dragleave={() => dragOver = false} on:drop={dropChannel}>
     <button class="toggle" on:click={toggleChannels} aria-expanded={openChannels} aria-label={`${openChannels ? "Collapse" : "Expand"} channels in ${folder.name}`}>▸</button>
     <button class="folder" class:active={$activeFolder === folder.id && !$activeChannelId} on:click={selectFolder}>
-      <span>{folder.name}</span><small>{folder.unreadCount || 0}/{folder.channelCount}</small>
+      <span>{folder.name}</span>
+      {#if folder.refreshMuted}
+        <svg class="mute-icon" viewBox="0 0 24 24" role="img" aria-label={folder.muted ? "Group refresh muted" : "Group refresh muted by parent"}>
+          <title>{folder.muted ? "Group refresh muted" : "Group refresh muted by parent"}</title>
+          <path d="M11 5 6 9H3v6h3l5 4V5Zm5 4 5 6m0-6-5 6" />
+        </svg>
+      {/if}
+      <small>{folder.unreadCount || 0}/{folder.channelCount}</small>
     </button>
     {#if folder.children?.length}<button class="toggle child" class:expanded={openFolders} on:click={() => openFolders = !openFolders} aria-expanded={openFolders} aria-label={`${openFolders ? "Collapse" : "Expand"} nested folders`}>▸</button>{/if}
     <details class="actions" use:escapeDetails>
       <summary class="more" aria-label={`Actions for ${folder.name}`}>•••</summary>
       <div class="menu">
         <button on:click={() => showChannelsFor.set(folder.id)}>Manage channels</button>
+        <button on:click={toggleMute} disabled={muting}>{muting ? "Saving…" : folder.muted ? "Unmute" : "Mute"}</button>
+        {#if folder.refreshMuted && !folder.muted}<p>Refresh muted by a parent group.</p>{/if}
         <button on:click={renameFolder}>Rename folder</button>
         <button class="danger" on:click={deleteFolder}>Delete folder</button>
       </div>
@@ -166,6 +189,7 @@
   .toggle.child { margin-left: -8px; }
   .folder, .channel { flex: 1; min-width: 0; display: flex; gap: 5px; align-items: center; text-align: left; border: 0; background: transparent; min-height: 40px; padding: 6px; }
   .folder span, .channel span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .mute-icon { width: 16px; height: 16px; flex: 0 0 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--text-muted); }
   small { margin-left: auto; color: var(--text-muted); }
   .folder:hover, .channel:hover, .more:hover, .star:hover { background: var(--hover-bg); }
   .folder.active, .channel.active { color: var(--accent-text); background: var(--active-bg); }
@@ -180,6 +204,7 @@
   .channel-menu { min-width: 210px; }
   .menu button { display: block; width: 100%; border: 0; background: transparent; text-align: left; padding: 7px; }
   .menu button:hover { background: var(--hover-bg); }
+  .menu p { padding: 7px; font-size: .75rem; color: var(--text-muted); }
   .menu button.danger { color: var(--danger); }
   .menu label { display: block; padding: 7px; font-size: .78rem; color: var(--text-muted); }
   .menu select { display: block; width: 100%; margin-top: 3px; padding: 5px; background: var(--field); color: var(--text); border: 1px solid var(--border); border-radius: 5px; }

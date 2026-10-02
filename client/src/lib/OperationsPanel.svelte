@@ -25,7 +25,7 @@
   } from "../stores/operations.js";
 
   const tabs = [
-    { id: "rules", label: "Refresh rules" },
+    { id: "rules", label: "Return highlights" },
     { id: "quota", label: "Quota" },
     { id: "system", label: "System" },
     { id: "backups", label: "Backups" },
@@ -179,15 +179,15 @@
     saving = true;
     try {
       payload = await saveSmartPolicy(policy); draft = policyToDraft(payload.policy);
-      toast.set({ message: "Refresh rules saved", type: "success" });
+      toast.set({ message: "Return highlight rules saved", type: "success" });
     } catch (err) { rulesError = err.message; }
     finally { saving = false; }
   }
 
   async function reset() {
-    if (!confirm("Reset refresh rules to the environment defaults?")) return;
+    if (!confirm("Reset return highlight rules to the environment defaults?")) return;
     saving = true; validation = ""; rulesError = "";
-    try { payload = await resetSmartPolicy(); draft = policyToDraft(payload.policy); toast.set({ message: "Refresh rules reset", type: "success" }); }
+    try { payload = await resetSmartPolicy(); draft = policyToDraft(payload.policy); toast.set({ message: "Return highlight rules reset", type: "success" }); }
     catch (err) { rulesError = err.message; }
     finally { saving = false; }
   }
@@ -212,7 +212,7 @@
 </script>
 
 <ModalShell id="operations-panel" title="Operations" onClose={close} wide>
-  <p slot="subtitle">Refresh policy, API usage, system health, and verified backups.</p>
+  <p slot="subtitle">Return highlights, API usage, system health, and verified backups.</p>
 
   <div class="tabs" role="tablist" aria-label="Operations sections">
     {#each tabs as tab, index}
@@ -235,19 +235,14 @@
       {#if rulesLoading}<p role="status">Loading settings…</p>
       {:else if !draft}<p class="alert" role="alert">{rulesError || "Settings unavailable"}</p>
       {:else}
-        <div class="section-title"><div><h3>Smart refresh rules</h3><p>Source: <strong>{payload?.source || "unknown"}</strong></p></div></div>
-        <div class="base-grid">
-          <label>No upload history (hours)<input type="number" min="0.01" step="0.25" bind:value={draft.noHistoryIntervalHours} /></label>
-          <label>After a new upload (hours)<input type="number" min="0.01" step="0.25" bind:value={draft.newUploadCooldownHours} /></label>
-          <label class="wide-field">Failure retries (minutes, comma separated)<input bind:value={draft.failureRetryMinutes} /></label>
-        </div>
-        <h4>Inactivity rules</h4>
-        <div class="rule-head" aria-hidden="true"><span>ID and label</span><span>Upload age days</span><span>Minimum hours</span><span></span></div>
+        <div class="section-title"><div><h3>Return highlight rules</h3><p>Source: <strong>{payload?.source || "unknown"}</strong></p></div></div>
+        <p>Every refresh checks all channels in unmuted groups, with no cooldown. Mute or unmute groups from their three-dot menus.</p>
+        <h4>Highlight channels returning after inactivity</h4>
+        <div class="rule-head" aria-hidden="true"><span>ID and label</span><span>Upload age days</span><span></span></div>
         {#each draft.rules as rule, index (rule.id + index)}
           <div class="rule-row">
             <div><label>ID<input value={rule.id} on:input={(event) => updateRule(index, "id", event.currentTarget.value)} /></label><label>Label<input value={rule.label} on:input={(event) => updateRule(index, "label", event.currentTarget.value)} /></label></div>
             <label>Age<input type="number" min="0" value={rule.minUploadAgeDays} on:input={(event) => updateRule(index, "minUploadAgeDays", event.currentTarget.value)} /></label>
-            <label>Hours<input type="number" min="0.01" step="0.25" value={rule.minRefreshIntervalHours} on:input={(event) => updateRule(index, "minRefreshIntervalHours", event.currentTarget.value)} /></label>
             <button type="button" on:click={() => removeRule(index)} aria-label={`Remove ${rule.label || rule.id}`}>Remove</button>
           </div>
         {/each}
@@ -407,10 +402,9 @@
   h3,h4 { color:var(--heading); margin:0 0 8px; } h4{font-size:.9rem} p{color:var(--text-muted);font-size:.8rem;margin:3px 0;line-height:1.45}
   .section-title { margin-bottom:12px; } .section-title.split,.card-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
   .quota-controls{display:flex;align-items:end;gap:7px}.quota-controls label{min-width:110px}
-  .base-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; } .wide-field{grid-column:1/-1}
   label { display:grid; gap:4px; color:var(--text-muted); font-size:.76rem; }
   input,select { background:var(--field); color:var(--text); border:1px solid var(--border); border-radius:7px; padding:8px; min-width:0; }
-  .rule-head,.rule-row { display:grid; grid-template-columns:minmax(240px,2fr) 1fr 1fr auto; gap:8px; align-items:end; padding:8px 0; border-bottom:1px solid var(--border); }
+  .rule-head,.rule-row { display:grid; grid-template-columns:minmax(240px,2fr) 1fr auto; gap:8px; align-items:end; padding:8px 0; border-bottom:1px solid var(--border); }
   .rule-head{color:var(--text-muted);font-size:.7rem}.rule-row>div{display:grid;grid-template-columns:1fr 1fr;gap:6px}
   button { background:var(--button);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 11px;cursor:pointer;font:inherit }
   button:disabled { opacity:.55; cursor:not-allowed; } button.primary{background:var(--accent);color:var(--ink);border-color:var(--accent)}
@@ -432,8 +426,8 @@
   .backup-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px 14px; align-items:center; padding:12px; border:1px solid var(--border); border-radius:9px; }
   .backup-row h4 { margin-bottom:2px; } .verify-status { grid-column:1/-1; min-height:0; }
   @media(max-width:700px){
-    .base-grid,.rule-row,.dashboard-grid,.metric-grid{grid-template-columns:1fr 1fr}.wide-field,.wide-card{grid-column:1/-1}.rule-head{display:none}.rule-row>div{grid-template-columns:1fr}.metric-grid .small-value{font-size:.72rem}
+    .rule-row,.dashboard-grid,.metric-grid{grid-template-columns:1fr 1fr}.wide-card{grid-column:1/-1}.rule-head{display:none}.rule-row>div{grid-template-columns:1fr}.metric-grid .small-value{font-size:.72rem}
     .history-row{grid-template-columns:78px minmax(70px,1fr) 75px minmax(120px,auto)}.history-row span:nth-child(4){display:none}.section-title.split{align-items:stretch;flex-direction:column}.quota-controls{align-items:stretch}.quota-controls label{flex:1}
   }
-  @media(max-width:480px){.base-grid,.rule-row,.dashboard-grid,.metric-grid{grid-template-columns:1fr}.wide-field,.wide-card{grid-column:auto}.backup-row{grid-template-columns:1fr}.backup-row>button{justify-self:start}.verify-status{grid-column:auto}}
+  @media(max-width:480px){.rule-row,.dashboard-grid,.metric-grid{grid-template-columns:1fr}.wide-card{grid-column:auto}.backup-row{grid-template-columns:1fr}.backup-row>button{justify-self:start}.verify-status{grid-column:auto}}
 </style>

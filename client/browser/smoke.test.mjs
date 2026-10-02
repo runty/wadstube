@@ -22,12 +22,24 @@ test("desktop/phone reader, native dialogs, sharing and install metadata", { tim
       Object.defineProperty(navigator, "share", { configurable: true, value: async data => { window.sharedLink = data; } });
     });
     const videos = Array.from({ length: 40 }, (_, i) => ({ video_id: `video${i}`, channel_id: "UCaaaaaaaaaaaaaaaaaaaaaa", title: `Fixture video ${i}`, channel: "Fixture channel", description: "Synthetic description", published: "2026-09-07T12:00:00Z", thumbnail: "/wads.png", url: `https://www.youtube.com/watch?v=fixture${i}`, watched: false, starred: false, hidden: false }));
+    const groups = [{ id: "fixture", name: "Fixture folder", channelCount: 1, muted: false, refreshMuted: false,
+      children: [{ id: "nested", name: "Nested folder", channelCount: 1, muted: false, refreshMuted: false, children: [] }] }];
+    const muteRequests = [];
     await page.route("**/*", async route => {
       const url = new URL(route.request().url());
       if (url.origin !== origin) return route.abort();
       if (!url.pathname.startsWith("/api/")) return route.continue();
       let data = [];
-      if (url.pathname === "/api/folders") data = [{ id: "fixture", name: "Fixture folder", channels: [], children: [] }];
+      if (url.pathname === "/api/folders") data = groups;
+      if (url.pathname === "/api/folders/fixture/mute") {
+        assert.equal(route.request().method(), "PATCH");
+        const { muted } = route.request().postDataJSON();
+        muteRequests.push(muted);
+        groups[0].muted = muted;
+        groups[0].refreshMuted = muted;
+        groups[0].children[0].refreshMuted = muted;
+        data = { ok: true, folders: groups };
+      }
       if (url.pathname === "/api/videos") data = { videos: videos.filter(v => !url.searchParams.get("q") || v.title.includes(url.searchParams.get("q"))), hasMore: false };
       if (url.pathname.endsWith("/state")) {
         const video = videos.find(v => url.pathname.includes(`/${v.video_id}/`));
@@ -72,6 +84,31 @@ test("desktop/phone reader, native dialogs, sharing and install metadata", { tim
     await page.locator(".search").fill("Fixture video 3");
     await page.waitForFunction(() => document.querySelectorAll(".card").length === 11);
     await page.locator(".search").fill("");
+    await page.waitForFunction(() => document.querySelectorAll(".card").length === 40);
+    if (await page.locator("aside").evaluate(el => el.inert)) await page.getByRole("button", { name: "Toggle folders", exact: true }).click();
+    let folderMenu = page.locator(".folder-row .actions").first();
+    await folderMenu.locator("summary").click();
+    await folderMenu.getByRole("button", { name: "Mute", exact: true }).click();
+    await page.getByRole("img", { name: "Group refresh muted", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Expand nested folders", exact: true }).click();
+    await page.getByRole("img", { name: "Group refresh muted by parent", exact: true }).waitFor();
+    for (const theme of ["light", "dark"]) {
+      await page.getByRole("button", { name: `Use ${theme} theme`, exact: true }).click();
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const muteAxe = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
+      assert.deepEqual(muteAxe.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => ({ target: n.target, summary: n.failureSummary })) })), [], `${width} ${theme} muted groups`);
+    }
+    if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/mute-${width}.png` });
+    await page.reload();
+    await page.locator(".card").first().waitFor();
+    assert.equal(await page.getByRole("img", { name: "Group refresh muted", exact: true }).count(), 1);
+    if (await page.locator("aside").evaluate(el => el.inert)) await page.getByRole("button", { name: "Toggle folders", exact: true }).click();
+    folderMenu = page.locator(".folder-row .actions").first();
+    await folderMenu.locator("summary").click();
+    await folderMenu.getByRole("button", { name: "Unmute", exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector(".mute-icon"));
+    assert.deepEqual(muteRequests, [true, false]);
+    if (width < 900) await page.getByRole("button", { name: "Toggle folders", exact: true }).click();
     const settings = page.getByTitle("Settings", { exact: true });
     await settings.click();
     await page.locator("#settings-popover").getByRole("button", { name: "Channel health", exact: true }).click();

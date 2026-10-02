@@ -664,8 +664,13 @@ class Db {
       new Date(meta.short_last_checked_at).getTime() + delayMinutes * 60_000;
   }
 
-  listPendingShorts(limit = 50, now = new Date().toISOString()) {
-    return this.stmts.listPendingShorts.all(now, Math.min(Math.max(Number(limit) || 50, 1), 500));
+  listPendingShorts(limit = 50, now = new Date().toISOString(), channelIds = null) {
+    const bounded = Math.min(Math.max(Number(limit) || 50, 1), 500);
+    if (channelIds === null) return this.stmts.listPendingShorts.all(now, bounded);
+    if (!channelIds.length) return [];
+    const sql = this.stmts.listPendingShorts.source.replace("ORDER BY",
+      `AND channel_id IN (${channelIds.map(() => "?").join(",")}) ORDER BY`);
+    return this.db.prepare(sql).all(now, ...channelIds, bounded);
   }
 
   recordVideoClassification(videoId, status, at = new Date().toISOString()) {

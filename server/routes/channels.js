@@ -9,6 +9,7 @@ module.exports = function channelsRoutes(appState) {
     moveChannels,
     saveData,
     CHANNEL_ID_RE,
+    refreshableChannelIds,
   } = require("../lib/data");
   const {
     refreshChannels,
@@ -99,8 +100,11 @@ module.exports = function channelsRoutes(appState) {
     const handle = tryAcquireLock(appState);
     if (!handle) return res.status(409).json({ error: "A manual refresh or data operation is already running" });
     try {
-      const runMode = chooseMode(appState.manualMode, appState.quota, ids.length);
-      const summary = await runRefresh(appState.db, ids, {
+      const refreshable = refreshableChannelIds(appState.data);
+      const selectedIds = ids.filter((id) => refreshable.has(id));
+      const runMode = chooseMode(appState.manualMode, appState.quota, selectedIds.length);
+      const summary = await runRefresh(appState.db, selectedIds, {
+        skipped: ids.length - selectedIds.length,
         keep: appState.maxVideos,
         mode: runMode.mode,
         requestedMode: runMode.requestedMode,
@@ -233,6 +237,7 @@ module.exports = function channelsRoutes(appState) {
   router.get("/", (req, res) => {
     seedSubscribedChannels();
     const details = subscriptionDetails();
+    const refreshable = refreshableChannelIds(appState.data);
     const status = ["all", "stale", "error"].includes(req.query.status)
       ? req.query.status
       : "all";
@@ -245,8 +250,7 @@ module.exports = function channelsRoutes(appState) {
       ...row,
       folderIds: details.get(row.id)?.folderIds || [],
       smart_refresh: evaluateRefresh(row, {
-        policy: appState.smartPolicy,
-        baseIntervalMinutes: appState.refreshIntervalMinutes,
+        muted: !refreshable.has(row.id),
       }),
     }));
     res.json(rows);
@@ -308,6 +312,9 @@ module.exports = function channelsRoutes(appState) {
     const handle = tryAcquireLock(appState);
     if (!handle) return res.status(409).json({ error: "A manual refresh or data operation is already running" });
     try {
+      if (!refreshableChannelIds(appState.data).has(req.params.channelId)) {
+        return res.status(409).json({ error: "Channel refresh is muted. Unmute a group containing this channel first." });
+      }
       const summary = await runRefresh(appState.db, [req.params.channelId], {
         keep: appState.maxVideos,
         mode: appState.manualMode,

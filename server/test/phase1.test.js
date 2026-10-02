@@ -123,13 +123,13 @@ test("refresh preview shares planning, reports scope and has no side effects", a
   assert.equal(all.membership_count, 4);
   assert.equal(all.unique_channel_count, 2);
   assert.equal(all.unresolved_count, 1);
-  assert.equal(all.due_count, 1);
-  assert.equal(all.skipped_count, 2);
+  assert.equal(all.due_count, 2);
+  assert.equal(all.skipped_count, 1);
   assert.equal(all.skipped_by_reason.unresolved, 1);
-  assert.equal(all.skipped_by_reason.new_upload_cooldown, 1);
+  assert.equal(all.skipped_by_reason.new_upload_cooldown, undefined);
   assert.equal(all.requested_mode, "api");
   assert.equal(all.effective_mode, "api");
-  assert.equal(all.projected_required_api_units, 1);
+  assert.equal(all.projected_required_api_units, 2);
   assert.equal(all.quota.buckets.general.remaining, 1);
   assert.deepEqual(all.full_pass, {
     channel_count: 2, projected_api_units: 2, current_remaining: 1,
@@ -152,13 +152,11 @@ test("refresh preview shares planning, reports scope and has no side effects", a
   assert.equal(db.getStats().channelCount, channelsBefore);
   assert.equal(db.getChannelMeta(CHANNEL_B), null, "preview must not seed channel titles");
   assert.equal(appState.refreshLock, null);
-  assert.deepEqual(assertedUnits, [1, 1, 0]);
+  assert.deepEqual(assertedUnits, [2, 2, 0]);
 
-  // Make the previously-due channel ineligible after preview. POST must build
-  // a new plan under the lock and pass that result to execution.
-  db.upsertChannel(CHANNEL_B, "B");
-  db.setLatestUploadAt(CHANNEL_B, new Date().toISOString());
-  db.recordChannelRefreshSuccess(CHANNEL_B, new Date().toISOString(), "ok", true);
+  // Muting after preview must change POST's freshly locked plan.
+  data.folders[0].muted = true;
+  data.folders[1].muted = true;
   let executedIds = null;
   let executedOptions = null;
   appState.refreshChannels = async (_db, ids, options) => {
@@ -183,7 +181,7 @@ test("refresh preview shares planning, reports scope and has no side effects", a
     .map((line) => JSON.parse(line));
   assert.equal(emptyEvents.find((event) => event.type === "summary").skipped, 0);
   assert.equal((await fetch(`${postBase}/api/refresh/missing`, { method: "POST" })).status, 404);
-  assert.deepEqual(assertedUnits, [1, 1, 0, 0, 0]);
+  assert.deepEqual(assertedUnits, [2, 2, 0, 0, 0]);
 });
 
 test("production refresh limiter counts POST execution but not preview GETs", async (t) => {
@@ -340,7 +338,8 @@ test("smart refresh setting validates, persists, drives routes, and resets", asy
   assert.deepEqual(reloaded.policy, saved.policy);
 
   const health = await (await fetch(`${base}/api/channels`)).json();
-  assert.equal(health[0].smart_refresh.intervalHours, 48);
+  assert.equal(health[0].smart_refresh.intervalHours, 0);
+  assert.equal(health[0].smart_refresh.due, true);
   await (await fetch(`${base}/api/refresh`, { method: "POST" })).text();
   assert.equal(refreshPolicy, appState.smartPolicy);
 

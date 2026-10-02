@@ -30,8 +30,8 @@ maintainer's Shrimp instance is packaged natively by NixOS.
 - Refresh now opens a read-only preview showing the exact folder scope, due and
   skipped counts/reasons, effective mode, and quota required before any network
   work starts. Confirmation recomputes the same shared plan server-side.
-- Smart refresh rules are editable from **Operations > Refresh rules**, persist
-  in SQLite, and can be reset to the environment-configured defaults.
+- Every explicit refresh checks all channels in unmuted groups, with no
+  cooldown. Return highlights remain editable in **Operations > Return highlights**.
 - Returning channels have a scoped **Returns** inbox. Acknowledgement removes
   the active badge without erasing its stored highlight history, and large
   inboxes are acknowledged in explicit batches.
@@ -161,10 +161,9 @@ shorts.
   refresh starts from a user click
 - **RSS or API refresh** — RSS is free; user-initiated refreshes can instead use
   the YouTube Data API when RSS is rate-limited
-- **Smart refresh selection** — a user-initiated folder/all refresh waits 2
-  hours after a refresh that found a new upload, and skips inactive channels
-  until their configured minimum has elapsed (6 h after 90 days, 24 h after 365
-  days by default)
+- **Group muting** — refresh all eligible channels without cooldowns. Mute or
+  unmute groups from the three-dot menu; nested groups inherit parent muting,
+  and shared channels remain eligible through unmuted groups.
 - **Returns inbox and history** — a new long-form upload from a channel
   returning after at least 3 months is highlighted without marking an initial
   backfill. The exact current view can be acknowledged, while the historical
@@ -612,7 +611,7 @@ refresh, favorite/unfavorite, global delete, and direct-membership move.
 
 #### `client/src/lib/OperationsPanel.svelte` — Operations Dashboard
 
-Keyboard-accessible tabs edit/reset refresh rules, visualize quota history and
+Keyboard-accessible tabs edit/reset return-highlight rules, visualize quota history and
 snapshot arithmetic, show cheap system/backup state, launch the explicit
 database check, and verify listed nightly backups on demand.
 
@@ -814,12 +813,11 @@ Deleting a folder or channel also purges the corresponding rows from
 
 ### Operations Dashboard
 
-Open **Operations & refresh rules** from the gear menu:
+Open **Operations & return highlights** from the title menu:
 
-- **Refresh rules** edits the post-upload cooldown, no-history interval,
-  failure retry delays, and extensible inactivity rules. Save persists the
-  validated override in SQLite. **Reset defaults** deletes that override and
-  immediately reactivates `SMART_REFRESH_POLICY_JSON` (or built-in defaults).
+- **Return highlights** edits inactivity thresholds and labels used to mark
+  returning channels. Save persists the validated override in SQLite.
+  **Reset defaults** returns to the environment-configured defaults.
 - **Quota** shows 7/14/30/90 Pacific-day history, the current general/search
   balance, a seven-complete-day average, and current due/full-pass arithmetic.
   This is a snapshot, not a prediction of when channels will upload or refresh.
@@ -946,27 +944,31 @@ reuses the refresh planner to show channels due now, API units required if API
 mode were used, units expected under the current effective mode, and full-pass
 capacity at the current balance. It deliberately provides no time projection.
 
-### Smart refresh policy
+### Refresh eligibility and group muting
 
-The default policy waits 2 hours after a successful refresh that discovered a
-new upload. Separately, a channel whose newest known upload is at least 90 days
-old has a 6-hour minimum refresh interval; at 365 days the stronger 24-hour rule
-wins. Add or replace rules with validated JSON:
+Every explicit refresh checks all resolved channels in its selected scope,
+without post-upload cooldowns, inactivity intervals, no-history waits, or failure
+backoff. Refreshes remain user-initiated, and concurrent runs are rejected.
 
-```env
-SMART_REFRESH_POLICY_JSON={"noHistoryIntervalHours":24,"newUploadCooldownHours":2,"failureRetryMinutes":[5,15,30,60],"rules":[{"id":"return_after_3_months","label":"Returned after 3 months","minUploadAgeDays":90,"minRefreshIntervalHours":6},{"id":"return_after_1_year","label":"Returned after 1 year","minUploadAgeDays":365,"minRefreshIntervalHours":24},{"id":"return_after_2_years","label":"Returned after 2 years","minUploadAgeDays":730,"minRefreshIntervalHours":72}]}
-```
+Open a group's three-dot menu and choose **Mute** to exclude its channels and
+nested groups from refreshes. A speaker-with-cross icon appears beside affected
+group names. Choose **Unmute** to allow refreshes again; a child of a muted parent
+stays muted until that parent is unmuted. Mute settings persist in `tube.json`,
+including subscription exports, restores, and nightly backups. Existing cached
+videos and reader state remain available.
 
-Rules may be listed in any order; the matching rule with the longest refresh
-interval wins, then the oldest upload threshold breaks ties. Invalid or
-duplicate rule IDs fail startup rather than silently changing scheduling.
+Channels belonging to both muted and unmuted groups still refresh through an
+unmuted membership. A refresh scoped to a muted group skips its entire subtree,
+even when a channel also belongs to another unmuted group. Single-channel and
+bulk refreshes respect the same global membership eligibility. Pending Shorts
+classification requests are limited to the selected eligible channels. A mute
+change waits for any running refresh or data operation before it is saved.
 
-The Operations editor persists a validated policy in SQLite `app_settings`.
-That persisted value takes precedence over `SMART_REFRESH_POLICY_JSON` across
-restarts. Reset deletes the persisted value, making the environment-derived
-policy authoritative again. If an invalid persisted value is encountered at
-startup, WadsTube logs a warning and uses the environment policy rather than
-running with invalid scheduling rules.
+Return highlighting still uses the validated inactivity thresholds and labels
+in `SMART_REFRESH_POLICY_JSON` or the persisted SQLite override. Existing interval
+and retry fields remain accepted for compatibility with saved settings, but
+never delay a refresh. The Operations editor exposes only highlight settings.
+Invalid rule IDs or out-of-range settings still fail validation.
 
 ## Environment Variables
 
@@ -978,7 +980,7 @@ running with invalid scheduling rules.
 | `MAX_VIDEOS`                  | Per-channel retention cap in the DB                                                                                                                                                                                           | `50`                                                                                   |
 | `REFRESH_MODE`                | Default refresh mode (`rss` or `api`) — used when the per-path override isn't set                                                                                                                                             | `rss`                                                                                  |
 | `REFRESH_MODE_MANUAL`         | Override for web-button refreshes                                                                                                                                                                                             | falls back to `REFRESH_MODE`                                                           |
-| `SMART_REFRESH_POLICY_JSON`   | Validated policy containing `newUploadCooldownHours`, `noHistoryIntervalHours`, bounded `failureRetryMinutes`, and extensible inactivity `rules`                                                                              | new upload → 2 h; 90 d → 6 h; 365 d → 24 h; no history → 24 h; failures → 5/15/30/60 m |
+| `SMART_REFRESH_POLICY_JSON` | Return-highlight thresholds and labels; persisted SQLite settings take precedence. Legacy timing fields are accepted but do not delay refreshes. | Highlights at 90 and 365 days |
 | `YOUTUBE_QUOTA_GENERAL_LIMIT` | General daily-unit budget enforced and displayed by WadsTube                                                                                                                                                                  | `10000`                                                                                |
 | `YOUTUBE_QUOTA_SEARCH_LIMIT`  | Separate daily `search.list` call budget                                                                                                                                                                                      | `100`                                                                                  |
 | `ALLOWED_ORIGINS`             | Optional comma-separated origins for a separate frontend; enables selective CORS responses and preflight while unlisted cross-origin mutations remain blocked                                                                 | —                                                                                      |
@@ -1037,7 +1039,7 @@ flowchart LR
     lib_dir --> youtube_js["youtube.js<br/>Data API client: resolveUrl, fetchChannelViaApi, checkIsShort"]
     lib_dir --> refresh_js["refresh.js<br/>Per-channel refresh orchestrator: RSS/API dispatch"]
     lib_dir --> refresh_plan_js["refresh-plan.js<br/>Shared preview and execution eligibility planner"]
-    lib_dir --> refresh_policy_js["refresh-policy.js<br/>Validated declarative due/highlight rules"]
+    lib_dir --> refresh_policy_js["refresh-policy.js<br/>Return-highlight rules and mute eligibility"]
     lib_dir --> settings_js["settings.js<br/>Persistent policy precedence and fallback"]
     lib_dir --> quota_js["quota.js<br/>Pacific daily ledger and per-run network metrics"]
     lib_dir --> backup_js["backup.js<br/>Verified nightly snapshots, listing, and GFS retention"]

@@ -529,3 +529,21 @@ test("long-running JSON mutations are not cut off by the ordinary read deadline 
   await fetchRequest("/api/channels/bulk/refresh", { method: "POST" });
   assert.equal(calls, 1);
 });
+
+
+test("group mute updates the shared tree only after a successful save", async () => {
+  const before = [{ id: "group one", name: "Group", muted: false }];
+  const after = [{ ...before[0], muted: true, refreshMuted: true }];
+  feed.folders.set(before);
+  let sent;
+  globalThis.fetch = async (url, options) => {
+    sent = { url, method: options.method, body: JSON.parse(options.body) };
+    return json({ folders: after });
+  };
+  await feed.setFolderMuted("group one", true);
+  assert.deepEqual(sent, { url: "/api/folders/group%20one/mute", method: "PATCH", body: { muted: true } });
+  assert.deepEqual(get(feed.folders), after);
+  globalThis.fetch = async () => json({ error: "Save failed" }, 500);
+  await assert.rejects(feed.setFolderMuted("group one", false), /Save failed/);
+  assert.deepEqual(get(feed.folders), after);
+});

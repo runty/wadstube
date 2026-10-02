@@ -20,6 +20,7 @@ module.exports = function (appState) {
     allReferencedChannelIds,
     isResolvedChannel,
     resolveFolderRouteId,
+    findFolder,
   } = require("../lib/data");
 
   // After mutations that may remove channels from the tree, drop their
@@ -134,6 +135,27 @@ module.exports = function (appState) {
       res.json({ ok: true, folders: summary() });
     } catch (err) {
       res.status(httpStatusForYoutubeError(err, 400)).json({ error: err.message });
+    }
+  });
+
+  // Mute changes wait for the current refresh, then publish only after save.
+  router.patch("/:name/mute", async (req, res) => {
+    if (typeof req.body?.muted !== "boolean") {
+      return res.status(400).json({ error: "muted boolean required" });
+    }
+    try {
+      await whileRefreshIdle(() => {
+        const id = resolveFolderId(req.params.name, res);
+        const nextData = structuredClone(appState.data);
+        const folder = findFolder(nextData.folders, id);
+        if (req.body.muted) folder.muted = true;
+        else delete folder.muted;
+        saveData(appState.dataDir, nextData);
+        appState.data = nextData;
+      });
+      res.json({ ok: true, folders: summary() });
+    } catch (err) {
+      res.status(err.status || (/not found/i.test(err.message) ? 404 : 500)).json({ error: err.message });
     }
   });
 

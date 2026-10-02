@@ -38,10 +38,9 @@ refreshes.
 - `server/lib/rss.js` — conditional Atom feed fetch and XML parsing
 - `server/lib/refresh.js` — RSS/API orchestration, quota-aware fallback, Shorts
   classification, upsert, and prune
-- `server/lib/refresh-plan.js` — shared preview/execution eligibility, reason
+- `server/lib/refresh-plan.js` — shared preview/execution scope and mute eligibility, reason
   grouping, mode preflight, and full-pass arithmetic
-- `server/lib/refresh-policy.js` — validated post-upload, retry, and inactivity
-  rules
+- `server/lib/refresh-policy.js` — validated return-highlight rules and immediate refresh eligibility
 - `server/lib/settings.js` — persisted smart policy with environment fallback
   and source reporting
 - `server/lib/frontend.js` — SPA cache and stale-asset policy
@@ -95,8 +94,8 @@ cd client && npm run dev
 - `MAX_VIDEOS` — per-channel retention cap (default 50)
 - `REFRESH_MODE` — default `rss` or `api` mode (default `rss`)
 - `REFRESH_MODE_MANUAL` — web-button mode; falls back to `REFRESH_MODE`
-- `SMART_REFRESH_POLICY_JSON` — environment default policy. A validated SQLite
-  `app_settings` override takes precedence until reset.
+- `SMART_REFRESH_POLICY_JSON` — environment default return-highlight policy. A validated SQLite
+  `app_settings` override takes precedence until reset. Legacy cooldown/retry fields are accepted but never delay refreshes.
 - `rss` refresh is quota-free but subject to YouTube per-IP rate limits.
 - `api` refresh is one general unit per channel under the June 2026 model.
 - Refresh summaries distinguish requested/effective mode, fallback channel
@@ -127,6 +126,10 @@ cd client && npm run dev
 - Do not add paid API fields such as view count or duration unless requested.
 - Only user actions make channel network requests. Concurrent refreshes are
   rejected.
+- Refresh has no channel cooldowns. Folder `muted: true` excludes its subtree;
+  a channel with another unmuted membership remains eligible through that path.
+  Folder-scoped refreshes honor muted ancestors. Single/bulk refresh and Shorts
+  retries must not bypass muted membership eligibility.
 - Preview never reserves quota or fetches YouTube. POST must recompute under the
   lock rather than trust preview output.
 - Return acknowledgement uses 1–5,000 explicit unique video IDs per request.
@@ -183,7 +186,7 @@ cd client && npm run dev
 
 ## Data format
 
-`tube.json` stores an ordered folder tree. Channels have `id`, `name`, and
+`tube.json` stores an ordered folder tree. Folders may have `muted: true` for persisted refresh exclusion. Channels have `id`, `name`, and
 `addedAt`; user-renamed entries have `userRenamed: true`.
 
 ```json

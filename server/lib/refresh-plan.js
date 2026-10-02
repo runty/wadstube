@@ -2,6 +2,7 @@ const {
   collectAllChannels,
   findFolder,
   isResolvedChannel,
+  refreshableChannelIds,
 } = require("./data");
 const { isRssFallbackErrorCode } = require("./refresh");
 const { evaluateRefresh, validatePolicy } = require("./refresh-policy");
@@ -57,14 +58,12 @@ function buildRefreshPlan(appState, { folderId = null, now = new Date() } = {}) 
   const resolvedMemberships = memberships.filter(isResolvedChannel);
   const unresolvedCount = memberships.length - resolvedMemberships.length;
   const channelIds = [...new Set(resolvedMemberships.map((channel) => channel.id))];
-  const metadata = new Map(
-    appState.db.listChannelRefreshMeta(channelIds).map((row) => [row.id, row]),
-  );
+  const refreshable = refreshableChannelIds(appState.data, folderId);
   const channelPlans = channelIds.map((channelId) => {
-    const evaluation = evaluateRefresh(metadata.get(channelId) || {}, {
+    const evaluation = evaluateRefresh({}, {
       now,
       policy,
-      baseIntervalMinutes: 0,
+      muted: !refreshable.has(channelId),
     });
     return {
       channel_id: channelId,
@@ -88,10 +87,7 @@ function buildRefreshPlan(appState, { folderId = null, now = new Date() } = {}) 
   const runMode = chooseMode(appState.manualMode, appState.quota, dueChannelIds.length);
   const quota = quotaSnapshot(appState.quota);
   const general = quota?.buckets?.general || null;
-  const allMemberships = membershipsForScope(appState.data, null);
-  const fullPassChannels = new Set(
-    allMemberships.filter(isResolvedChannel).map((channel) => channel.id),
-  ).size;
+  const fullPassChannels = refreshableChannelIds(appState.data).size;
   const remaining = general?.remaining ?? null;
 
   return {

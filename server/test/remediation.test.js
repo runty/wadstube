@@ -32,7 +32,7 @@ function apiResponse(channelId, videoId) {
     } }] });
 }
 
-test("attempt and success timestamps split; failed no-history channels use bounded backoff", (t) => {
+test("attempt and success timestamps split; failed channels can retry immediately", (t) => {
   const { db } = tempDb(t);
   db.upsertChannel(CHANNEL_A, "Failure");
   const at = "2026-07-19T12:00:00.000Z";
@@ -41,7 +41,7 @@ test("attempt and success timestamps split; failed no-history channels use bound
   let meta = db.getChannelMeta(CHANNEL_A);
   assert.equal(meta.last_refresh_attempt_at, at);
   assert.equal(meta.last_refreshed_at, null);
-  assert.equal(evaluateRefresh(meta, { now: "2026-07-19T12:04:59.000Z", policy: DEFAULT_POLICY }).due, false);
+  assert.equal(evaluateRefresh(meta, { now: "2026-07-19T12:04:59.000Z", policy: DEFAULT_POLICY }).due, true);
   assert.equal(evaluateRefresh(meta, { now: "2026-07-19T12:05:00.000Z", policy: DEFAULT_POLICY }).due, true);
 
   db.recordChannelRefreshAttempt(CHANNEL_A, "2026-07-19T12:05:00.000Z");

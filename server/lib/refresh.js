@@ -404,7 +404,7 @@ async function refreshChannels(db, channelIds, opts = {}, onEvent = null) {
 
     // Retry durable unknown classifications independently of the current RSS
     // window. Selection is DB-backed and exponentially paced per video.
-    const pending = db.listPendingShorts?.(pendingShortLimit) || [];
+    const pending = db.listPendingShorts?.(pendingShortLimit, new Date().toISOString(), ids) || [];
     let pendingReclassified = 0;
     const pendingResults = await Promise.allSettled(pending.map((video) => shortLimit(async () => {
       const status = await checkIsShort(video.video_id, metrics);

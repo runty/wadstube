@@ -48,33 +48,34 @@ directory.
 
 ## Native NixOS on Shrimp
 
-Shrimp packages WadsTube from `vendor/wadstube` in the sibling `nixstuff`
+Shrimp packages WadsTube from `vendor/wadstube` in the sibling `homelab`
 repository. The old `~/wadstube-redeploy.sh` Docker workflow is obsolete.
 
 1. Validate, commit, and push this repository on `main`; record the seven-digit
    source commit.
-2. Copy only the changed source, documentation, and tests into
-   `nixstuff/vendor/wadstube`.
+2. Export the committed source with `git archive`, review its diff, and refresh
+   `homelab/vendor/wadstube` per `homelab/vendor/README.md`. Include no runtime
+   data, credentials, dependencies, or build output.
 3. Update every source-version reference in
    `nixos/hosts/shrimp/wadstube.nix`: server, client, combined package, and
    `WADSTUBE_VERSION`.
-4. In `nixstuff`, run `nix flake check --no-build`, commit the scoped deployment
+4. In `homelab`, run `nix flake check --no-build`, commit the scoped deployment
    files, and push `main`.
 5. Before touching live state, confirm the host is `shrimp`, the checkout is
    clean, `wadstube.service` is active, and `/api/status/refresh` reports that no
    refresh is running. Capture `/api/status/system` database counts.
-6. Shrimp has used its regular checkout since September 8, 2026. The historical
-   dependency-pinned rollout is no longer the deployment target. Inspect and
+6. Shrimp uses `/home/phobus/work/homelab` following the September 27 repository
+   consolidation. The old `nixstuff` and pinned rollout checkouts are retired. Inspect and
    fast-forward the regular checkout, then evaluate without switching:
 
    ```bash
-   cd /home/phobus/nixstuff
+   cd /home/phobus/work/homelab
    git status --short # stop if there are unexpected changes
    git pull --ff-only
    nix flake check --no-build
    ```
 
-   Follow `nixstuff/AGENTS.md` for platform evaluation requirements. A separate
+   Follow `homelab/AGENTS.md` for platform evaluation requirements. A separate
    dry build is not part of the default workflow unless explicitly requested.
 
 7. Determine all affected units, disclose expected downtime, and obtain explicit

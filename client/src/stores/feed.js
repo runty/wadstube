@@ -232,6 +232,17 @@ export async function renameFolderApi(oldName, newName) {
   folders.set(data.folders);
 }
 
+export async function setFolderMuted(folderId, muted) {
+  const resp = await fetch(`${API}/api/folders/${encodeURIComponent(folderId)}/mute`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ muted }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || "Failed to update group mute");
+  folders.set(data.folders);
+}
+
 export async function deleteFolderApi(name) {
   const resp = await fetch(`${API}/api/folders/${encodeURIComponent(name)}`, {
     method: "DELETE",

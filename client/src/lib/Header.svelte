@@ -114,7 +114,7 @@
     {#if showGearMenu}
       <div id="settings-popover" class="gear-menu title-menu" aria-label="Settings">
         <button type="button" on:keydown={handleSettingsKeydown} on:click={() => openPersistentModal(showHealth, true)}>Channel health</button>
-        <button type="button" on:keydown={handleSettingsKeydown} on:click={() => openPersistentModal(showOperations, true)}>Operations & refresh rules</button>
+        <button type="button" on:keydown={handleSettingsKeydown} on:click={() => openPersistentModal(showOperations, true)}>Operations & return highlights</button>
         <button type="button" on:keydown={handleSettingsKeydown} on:click={handleBackup}>&#8615; Export subscriptions</button>
         <button type="button" on:keydown={handleSettingsKeydown} on:click={handleFullBackup}>&#8615; Full backup</button>
         <button type="button" on:keydown={handleSettingsKeydown} on:click={handleRestoreClick}>&#8613; Import subscriptions</button>

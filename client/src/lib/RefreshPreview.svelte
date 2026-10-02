@@ -34,12 +34,12 @@
 </script>
 
 <ModalShell id="refresh-preview" title="Refresh preview" onClose={close}>
-  <p slot="subtitle">This is an estimate. Confirming recomputes eligibility on the server.</p>
+  <p slot="subtitle">Refresh checks all channels in unmuted groups. Confirming checks the current mute settings again.</p>
   {#if loading}<p role="status">Loading refresh plan…</p>
   {:else if localError}<p class="alert" role="alert">{localError}</p>
   {:else if preview}
     <div class="metrics">
-      <div><strong>{preview.due_count}</strong><span>Due</span></div>
+      <div><strong>{preview.due_count}</strong><span>Ready</span></div>
       <div><strong>{preview.skipped_count}</strong><span>Skipped</span></div>
       <div><strong>{preview.membership_count}</strong><span>Memberships</span></div>
       <div><strong>{preview.unresolved_count}</strong><span>Unresolved</span></div>
@@ -50,11 +50,11 @@
     <section><h3>Plan</h3>
       <p>{preview.projected_required_api_units} API units required · {preview.quota?.buckets?.general?.remaining ?? "Unknown"} currently remaining.</p>
       <p>Mode: {preview.requested_mode} → {preview.effective_mode}. Reset: {preview.quota?.resetAt ? new Date(preview.quota.resetAt).toLocaleString() : "Unknown"}.</p>
-      <p>Full library: {preview.full_pass?.channel_count || 0} channels, {preview.full_pass?.projected_api_units || 0} units, {preview.full_pass?.complete_passes_remaining ?? "?"} complete passes remaining.</p>
+      <p>Unmuted library: {preview.full_pass?.channel_count || 0} channels, {preview.full_pass?.projected_api_units || 0} units, {preview.full_pass?.complete_passes_remaining ?? "?"} complete passes remaining.</p>
     </section>
     <div class="groups">
-      <section><h3>Due reasons</h3>
-        {#if !entries(preview.due_by_reason).length}<p>Nothing is due.</p>{/if}
+      <section><h3>Ready to refresh</h3>
+        {#if !entries(preview.due_by_reason).length}<p>No channels are ready to refresh.</p>{/if}
         {#each entries(preview.due_by_reason) as [reason, count]}<p>{formatReason(reason)} <strong>{count}</strong></p>{/each}
       </section>
       <section><h3>Skipped reasons</h3>

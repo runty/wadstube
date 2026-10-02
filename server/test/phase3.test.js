@@ -33,7 +33,7 @@ function tempDb(t) {
   return { dir, db };
 }
 
-test("smart policy selects the strongest rule at exact boundaries and is extensible", () => {
+test("return policy preserves highlight thresholds without delaying manual refreshes", () => {
   const now = new Date("2026-07-19T12:00:00.000Z");
   const daysAgo = (days) => new Date(now.getTime() - days * 86400000).toISOString();
   assert.equal(strongestMatchingRule(daysAgo(89), now, DEFAULT_POLICY), null);
@@ -46,13 +46,13 @@ test("smart policy selects the strongest rule at exact boundaries and is extensi
     last_refreshed_at: new Date(now.getTime() - 6 * 3600000).toISOString(),
   }, { now, policy: DEFAULT_POLICY });
   assert.equal(sixHours.due, true);
-  assert.equal(sixHours.intervalHours, 6);
+  assert.equal(sixHours.intervalHours, 0);
 
   const noHistory = evaluateRefresh({
     latest_upload_at: null,
     last_refreshed_at: new Date(now.getTime() - 23 * 3600000).toISOString(),
   }, { now, policy: DEFAULT_POLICY });
-  assert.equal(noHistory.due, false);
+  assert.equal(noHistory.due, true);
   assert.equal(evaluateRefresh({}, { now, policy: DEFAULT_POLICY }).due, true);
   assert.equal(evaluateRefresh({ last_refreshed_at: now.toISOString() }, { now, force: true }).due, true);
   const uploadCooldown = evaluateRefresh({
@@ -60,9 +60,9 @@ test("smart policy selects the strongest rule at exact boundaries and is extensi
     latest_upload_at: daysAgo(1),
     last_refresh_had_upload: 1,
   }, { now, policy: DEFAULT_POLICY, baseIntervalMinutes: 0 });
-  assert.equal(uploadCooldown.due, false);
-  assert.equal(uploadCooldown.reason, "new_upload_cooldown");
-  assert.equal(uploadCooldown.intervalHours, 2);
+  assert.equal(uploadCooldown.due, true);
+  assert.equal(uploadCooldown.reason, "manual_refresh");
+  assert.equal(uploadCooldown.intervalHours, 0);
   assert.equal(evaluateRefresh({
     last_refreshed_at: new Date(now.getTime() - 2 * 3600000).toISOString(),
     latest_upload_at: daysAgo(1),
@@ -100,7 +100,7 @@ test("smart policy selects the strongest rule at exact boundaries and is extensi
     manualMode: "rss", quota: null, smartPolicy: maximumPolicy,
   };
   const maximumPlan = buildRefreshPlan(plannerState, { now });
-  assert.equal(maximumPlan.channels.plans[0].interval_hours, MAX_REFRESH_INTERVAL_HOURS);
+  assert.equal(maximumPlan.channels.plans[0].interval_hours, 0);
   assert.doesNotThrow(() => new Date(maximumPlan.channels.plans[0].next_due_at).toISOString());
   for (const excessive of [
     {

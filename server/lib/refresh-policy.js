@@ -115,62 +115,20 @@ function strongestMatchingRule(latestUploadAt, now = new Date(), policy = DEFAUL
   }, null);
 }
 
-function evaluateRefresh(meta, {
+// Every explicit refresh is eligible immediately. Legacy interval settings are
+// still accepted for saved-policy compatibility, but cannot delay a channel.
+function evaluateRefresh(_meta, {
   now = new Date(),
-  policy = DEFAULT_POLICY,
-  baseIntervalMinutes = 30,
+  muted = false,
   force = false,
 } = {}) {
-  const currentMs = new Date(now).getTime();
-  if (force) return { due: true, forced: true, reason: "manual_force", rule: null, nextDueAt: new Date(currentMs).toISOString() };
-  if (meta?.last_refresh_status === "error" && meta.last_refresh_attempt_at) {
-    const attemptMs = new Date(meta.last_refresh_attempt_at).getTime();
-    if (Number.isFinite(attemptMs)) {
-      const failures = Math.max(1, Number(meta.consecutive_failures) || 1);
-      const index = Math.min(failures - 1, policy.failureRetryMinutes.length - 1);
-      const retryMinutes = policy.failureRetryMinutes[index];
-      const nextDueMs = attemptMs + retryMinutes * 60_000;
-      return {
-        due: currentMs >= nextDueMs,
-        forced: false,
-        reason: "failure_backoff",
-        rule: null,
-        retryMinutes,
-        intervalHours: retryMinutes / 60,
-        nextDueAt: new Date(nextDueMs).toISOString(),
-      };
-    }
-  }
-  if (!meta?.last_refreshed_at) {
-    return { due: true, forced: false, reason: "never_refreshed", rule: null, nextDueAt: new Date(currentMs).toISOString() };
-  }
-
-  const lastMs = new Date(meta.last_refreshed_at).getTime();
-  if (!Number.isFinite(lastMs)) {
-    return { due: true, forced: false, reason: "invalid_last_refresh", rule: null, nextDueAt: new Date(currentMs).toISOString() };
-  }
-  const rule = strongestMatchingRule(meta.latest_upload_at, now, policy);
-  const configuredBaseMinutes = Number(baseIntervalMinutes);
-  const normalIntervalMinutes = Number.isFinite(configuredBaseMinutes)
-    ? Math.max(0, configuredBaseMinutes)
-    : 30;
-  const intervalMs = rule
-    ? rule.minRefreshIntervalHours * HOUR_MS
-    : meta.last_refresh_had_upload
-      ? policy.newUploadCooldownHours * HOUR_MS
-    : meta.latest_upload_at
-      ? normalIntervalMinutes * 60_000
-      : policy.noHistoryIntervalHours * HOUR_MS;
-  const nextDueMs = lastMs + intervalMs;
   return {
-    due: currentMs >= nextDueMs,
-    forced: false,
-    reason: rule?.id || (meta.last_refresh_had_upload
-      ? "new_upload_cooldown"
-      : meta.latest_upload_at ? "normal_cadence" : "no_upload_history"),
-    rule,
-    intervalHours: intervalMs / HOUR_MS,
-    nextDueAt: new Date(nextDueMs).toISOString(),
+    due: !muted,
+    forced: force && !muted,
+    reason: muted ? "muted_folder" : force ? "manual_force" : "manual_refresh",
+    rule: null,
+    intervalHours: 0,
+    nextDueAt: muted ? null : new Date(now).toISOString(),
   };
 }
 
